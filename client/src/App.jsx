@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { cpp } from '@codemirror/lang-cpp';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { graphqlLight } from '@uiw/codemirror-theme-github';
+import { githubLight } from '@uiw/codemirror-theme-github';
 import { toPng } from 'html-to-image';
 import {
   compileAndRun,
@@ -10,7 +10,11 @@ import {
   lintCode,
   CompilerError,
 } from './lib/compiler.js';
-import { SAMPLES, DEFAULT_CODE } from './lib/samples.js';
+import {
+  browserCompileAndRun,
+  browserCheckSolution,
+} from './lib/browserCompiler.js';
+import { SAMPLES } from './lib/samples.js';
 import { PROBLEMS } from './lib/problems.js';
 import { LESSONS } from './lib/lessons.js';
 import { QUIZZES } from './lib/quizzes.js';
@@ -57,7 +61,8 @@ function writeDraft(d) {
 export default function App() {
   const [language, setLanguage] = useState('cpp');
   const [compiler, setCompiler] = useState('auto');
-  const [code, setCode] = useState(DEFAULT_CODE);
+  const [runMode, setRunMode] = useState('server');
+  const [code, setCode] = useState(SAMPLES.cpp.hello.code);
   const [output, setOutput] = useState('');
   const [status, setStatus] = useState('idle');
   const [runError, setRunError] = useState(null);
@@ -85,6 +90,7 @@ export default function App() {
   const [downloadName, setDownloadName] = useState('my_program');
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [savedPrograms, setSavedPrograms] = useState(() => loadPrograms());
+  const [clipNotice, setClipNotice] = useState(null);
 
   // Live diagnostics
   const [liveDiags, setLiveDiags] = useState(null);
@@ -95,6 +101,8 @@ export default function App() {
   codeRef.current = code;
   const languageRef = useRef(language);
   languageRef.current = language;
+  const runModeRef = useRef(runMode);
+  runModeRef.current = runMode;
   const lintRunning = useRef(false);
 
   // ---- Theme + font size side effects ----
@@ -129,10 +137,10 @@ export default function App() {
   // ---- Autosave draft (debounced) ----
   useEffect(() => {
     const t = setTimeout(() => {
-      writeDraft({ code, language, compiler, input, name: downloadName });
+      writeDraft({ code, language, compiler, input, name: downloadName, runMode });
     }, 600);
     return () => clearTimeout(t);
-  }, [code, language, compiler, input, downloadName]);
+  }, [code, language, compiler, input, downloadName, runMode]);
 
   // ---- Restore draft on mount (runs once) ----
   useEffect(() => {
@@ -141,8 +149,30 @@ export default function App() {
       setCode(draft.code);
       if (draft.language) setLanguage(draft.language);
       if (draft.compiler) setCompiler(draft.compiler);
+      if (draft.runMode) setRunMode(draft.runMode);
       if (typeof draft.input === 'string') setInput(draft.input);
       if (draft.name) setDownloadName(draft.name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---- Load shared code from URL hash (takes priority over draft) ----
+  useEffect(() => {
+    if (!window.location.hash) return;
+    const m = window.location.hash.match(/[#&]code=([^&]+)/);
+    if (!m) return;
+    try {
+      const shared = decodeURIComponent(escape(atob(m[1])));
+      if (shared && shared.trim()) {
+        setCode(shared);
+        setRunError(null);
+        setCheckResult(null);
+        setOutput('');
+        setStatus('idle');
+        writeDraft({ code: shared, language, compiler, input, name: downloadName });
+      }
+    } catch {
+      /* invalid share code — ignore */
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -151,6 +181,9 @@ export default function App() {
 
   // ---- Live compile-as-you-type ----
   const triggerLiveLint = useCallback(async () => {
+    // Live syntax checking is a server-side feature (it needs gcc-style
+    // syntax-only compile). In browser mode there is no backend, so skip it.
+    if (runModeRef.current !== 'server') return;
     const current = codeRef.current;
     if (!current.trim() || lintRunning.current) return;
     lintRunning.current = true;
@@ -204,26 +237,31 @@ export default function App() {
     setOutput('');
     openConsole(isMobile ? 200 : 300);
     try {
-      const result = await compileAndRun({ code, language, compiler, input });
+      const result =
+        runMode === 'browser'
+          ? await browserCompileAndRun({ code, language, input })
+          : await compileAndRun({ code, language, compiler, input });
       setOutput(result.output);
       setStatus('success');
       setLastRunInfo({ ok: true, at: new Date() });
     } catch (err) {
-      if (err instanceof CompilerError) {
-        if (err.stage === 'network' || err.stage === 'http') {
-          setNetworkError(err.message);
-          setStatus('idle');
-        } else {
-          setRunError({ message: err.message, output: err.output, stage: err.stage });
-          setOutput(err.output || '');
-          setStatus('failed');
-        }
+      const isCE = err instanceof CompilerError;
+      const stage = isCE ? err.stage : err && err.stage;
+      const message = isCE ? err.message : (err && err.message) || 'Unexpected error while running your program.';
+      const out = isCE ? err.output || '' : (err && err.output) || '';
+      if (isCE && (stage === 'network' || stage === 'http')) {
+        setNetworkError(message);
+        setStatus('idle');
+      } else if (isCE || stage) {
+        setRunError({ message, output: out, stage: stage || 'compile' });
+        setOutput(out);
+        setStatus('failed');
       } else {
-        setNetworkError('Unexpected error while running your program.');
+        setNetworkError(message);
         setStatus('idle');
       }
     }
-  }, [code, language, compiler, input, isMobile]);
+  }, [code, language, compiler, input, runMode, isMobile]);
 
   const openConsole = useCallback((height) => {
     setConsoleOpen(true);
@@ -240,14 +278,26 @@ export default function App() {
     setChecking(true);
     openConsole(isMobile ? 260 : 340);
     try {
-      const res = await checkSolution({ code, language, input: p.input, expected: p.expected });
+      const res =
+        runMode === 'browser'
+          ? await browserCheckSolution({ code, language, input: p.input, expected: p.expected })
+          : await checkSolution({ code, language, input: p.input, expected: p.expected });
       setStatus('success');
       setOutput(res.output);
       setCheckResult({ passed: res.passed, output: res.output, expected: res.expected });
     } catch (err) {
-      if (err instanceof CompilerError && err.stage !== 'network' && err.stage !== 'http') {
-        setRunError({ message: err.message, output: err.output, stage: err.stage });
-        setOutput(err.output || '');
+      const isCE = err instanceof CompilerError;
+      const stage = isCE ? err.stage : err && err.stage;
+      if (isCE && (stage === 'network' || stage === 'http')) {
+        setNetworkError(isCE ? err.message : 'Could not check your solution.');
+        setStatus('idle');
+      } else if (isCE || stage) {
+        setRunError({
+          message: isCE ? err.message : (err && err.message) || 'Could not run your solution.',
+          output: isCE ? err.output || '' : (err && err.output) || '',
+          stage: stage || 'compile',
+        });
+        setOutput((isCE ? err.output : (err && err.output)) || '');
         setStatus('failed');
       } else {
         setNetworkError((err && err.message) || 'Could not check your solution.');
@@ -257,7 +307,7 @@ export default function App() {
       setChecking(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProblem, code, language, isMobile]);
+  }, [activeProblem, code, language, runMode, isMobile]);
 
   // ---- Select problem / lesson ----
   const selectProblem = useCallback(
@@ -326,6 +376,43 @@ export default function App() {
     }
   }, [language, theme]);
 
+  const clipboardFallback = (text) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+    } catch {
+      /* ignore */
+    }
+    document.body.removeChild(ta);
+  };
+
+  const copyCode = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+    } catch {
+      clipboardFallback(code);
+    }
+    setClipNotice('Code copied to clipboard');
+    setTimeout(() => setClipNotice(null), 2000);
+  }, [code]);
+
+  const shareCode = useCallback(async () => {
+    const encoded = btoa(unescape(encodeURIComponent(code)));
+    const url = `${window.location.origin}${window.location.pathname}#code=${encoded}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      clipboardFallback(url);
+    }
+    setClipNotice('Share link copied to clipboard');
+    setTimeout(() => setClipNotice(null), 2000);
+  }, [code]);
+
   // ---- File manager ----
   const saveCurrentProgram = useCallback(() => {
     const updated = [...savedPrograms];
@@ -381,7 +468,7 @@ export default function App() {
   const samples = SAMPLES[language];
   const liveErrorCount = liveDiags ? liveDiags.errors.length : 0;
 
-  const editorTheme = theme === 'light' ? graphqlLight : oneDark;
+  const editorTheme = theme === 'light' ? githubLight : oneDark;
   const isProblem = activeProblem !== null;
 
   return (
@@ -465,6 +552,18 @@ export default function App() {
               </select>
             </label>
           )}
+          <label className="field">
+            Run mode
+            <select
+              value={runMode}
+              onChange={(e) => setRunMode(e.target.value)}
+              disabled={isRunning}
+              title="Server uses the backend compiler; Browser runs an in-browser compiler (works on any static host, needs internet on first run)"
+            >
+              <option value="server">Server</option>
+              <option value="browser">Browser (static host)</option>
+            </select>
+          </label>
         </div>
 
         <div className="toolbar-group samples">
@@ -482,6 +581,14 @@ export default function App() {
         </div>
 
         <div className="toolbar-group">
+          <button
+            className="btn btn-ghost"
+            onClick={() => openConsole(isMobile ? 200 : 300)}
+            title="Open the output console"
+          >
+            Console
+          </button>
+
           {isProblem ? (
             <button
               className="btn btn-run"
@@ -538,6 +645,27 @@ export default function App() {
                   }}
                 >
                   <span className="dropdown-ic">≡</span> File (.{ext})
+                </button>
+                <div className="dropdown-divider" />
+                <button
+                  className="dropdown-item"
+                  role="menuitem"
+                  onClick={() => {
+                    copyCode();
+                    setDownloadOpen(false);
+                  }}
+                >
+                  <span className="dropdown-ic">⧉</span> Copy code
+                </button>
+                <button
+                  className="dropdown-item"
+                  role="menuitem"
+                  onClick={() => {
+                    shareCode();
+                    setDownloadOpen(false);
+                  }}
+                >
+                  <span className="dropdown-ic">↗</span> Copy share link
                 </button>
               </div>
             )}
@@ -615,6 +743,22 @@ export default function App() {
           )}
         </div>
 
+        <div className="input-panel">
+          <div className="input-panel-head">
+            <span>Program input (stdin)</span>
+            <span className="input-hint">
+              Type the text your program reads with <code>cin</code> / <code>scanf</code>, then press Run
+            </span>
+          </div>
+          <textarea
+            className="input-area"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={isProblem ? 'This problem provides input automatically. You can still edit it.' : 'Type input here, e.g.  25'}
+            rows={2}
+          />
+        </div>
+
         <main className="main">
           <section className="pane editor-pane" ref={editorRef}>
             <div className="pane-header">
@@ -670,19 +814,6 @@ export default function App() {
             <CompileErrorBanner error={runError} sourceLines={code.split('\n')} />
             <CheckResultBanner result={checkResult} />
             <OutputPanel output={output} status={status} />
-            <div className="input-block">
-              <div className="input-label">
-                <span>Program input (stdin)</span>
-                <span>one value per line</span>
-              </div>
-              <textarea
-                className="input-area"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={isProblem ? 'Input is auto-filled for this problem.' : 'Type input the program reads with scanf/cin…'}
-                disabled={isProblem}
-              />
-            </div>
           </section>
         </div>
       )}

@@ -304,6 +304,99 @@ body {
   color: var(--accent);
 }
 
+.dropdown-name-row {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dropdown-name-row label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+
+.name-input {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 7px 10px;
+  font-size: 0.85rem;
+  width: 100%;
+}
+
+.name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.dropdown-item-row {
+  display: flex;
+  align-items: center;
+}
+
+.dropdown-item-row .dropdown-item {
+  flex: 1;
+}
+
+.dropdown-del {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  border-radius: 6px;
+}
+
+.dropdown-del:hover {
+  color: var(--red);
+  background: rgba(229, 83, 75, 0.1);
+}
+
+/* Run indicator + live bar extras */
+.run-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  background: rgba(79, 140, 255, 0.1);
+  color: var(--accent);
+  font-size: 0.82rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.cursor-pos {
+  margin-left: auto;
+}
+
+.live-bar .cursor-pos {
+  margin-left: auto;
+  font-family: 'Cascadia Code', Consolas, monospace;
+}
+
 /* Banner */
 .banner {
   padding: 10px 20px;
@@ -933,43 +1026,57 @@ body {
   font-weight: 700;
 }
 
-/* Input box in terminal */
-.input-block {
-  border-top: 1px solid var(--border);
+/* Persistent input panel (always visible above the editor) */
+.input-panel {
+  border-bottom: 1px solid var(--border);
   background: var(--bg-2);
   flex-shrink: 0;
 }
 
-.input-label {
+.input-panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 14px 0;
+  gap: 10px;
+  padding: 6px 14px;
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--muted);
 }
 
-.input-label span {
+.input-panel-head .input-hint {
   text-transform: none;
   letter-spacing: 0;
+  font-size: 0.75rem;
+}
+
+.input-panel code {
+  background: var(--panel);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: 'Cascadia Code', Consolas, monospace;
 }
 
 .input-area {
-  width: 100%;
+  width: calc(100% - 28px);
   min-height: 44px;
-  max-height: 120px;
+  max-height: 140px;
   resize: vertical;
   background: var(--code-bg);
   color: var(--text);
-  border: none;
-  border-top: 1px solid var(--border);
-  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0 14px 10px;
+  padding: 8px 12px;
   font-family: 'Cascadia Code', Consolas, monospace;
   font-size: 0.85rem;
   line-height: 1.4;
   outline: none;
+}
+
+.input-area:focus {
+  border-color: var(--accent);
 }
 
 /* Live diagnostics bar */
