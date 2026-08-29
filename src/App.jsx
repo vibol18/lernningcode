@@ -273,7 +273,6 @@ export default function App() {
       },
     });
     runRef.current = handle;
-    if (input) handle.sendInput(input);
   }, [code, language, input, isMobile]);
 
   const stopRun = useCallback(() => {
