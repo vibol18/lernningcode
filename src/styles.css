@@ -1153,6 +1153,12 @@ body {
   padding: 0 14px 12px;
 }
 
+.batch-send-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 14px 12px;
+}
+
 .live-input {
   flex: 1;
   min-width: 0;

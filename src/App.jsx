@@ -876,6 +876,16 @@ export default function App() {
                   }
                   rows={2}
                 />
+                <div className="batch-send-row">
+                  <button
+                    type="button"
+                    className="btn btn-run btn-live-send"
+                    onClick={runCode}
+                    disabled={isRunning}
+                  >
+                    Enter ↵
+                  </button>
+                </div>
               </div>
             )}
           </section>
