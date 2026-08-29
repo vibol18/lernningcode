@@ -644,22 +644,6 @@ export default function App() {
           )}
         </div>
 
-        <div className="input-panel">
-          <div className="input-panel-head">
-            <span>Program input (stdin)</span>
-            <span className="input-hint">
-              Type the text your program reads with <code>cin</code> / <code>scanf</code>, then press Run
-            </span>
-          </div>
-          <textarea
-            className="input-area"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={isProblem ? 'This problem provides input automatically. You can still edit it.' : 'Type input here, e.g.  25'}
-            rows={2}
-          />
-        </div>
-
         <main className="main">
           <section className="pane editor-pane" ref={editorRef}>
             <div className="pane-header">
@@ -715,6 +699,25 @@ export default function App() {
             <CompileErrorBanner error={runError} sourceLines={code.split('\n')} />
             <CheckResultBanner result={checkResult} />
             <OutputPanel output={output} status={status} />
+            <div className="console-stdin">
+              <div className="console-stdin-head">
+                <span>Program input (stdin)</span>
+                <span className="input-hint">
+                  Type what your program reads with <code>cin</code> / <code>scanf</code>, then press Run
+                </span>
+              </div>
+              <textarea
+                className="input-area terminal-input"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder={
+                  isProblem
+                    ? 'This problem provides input automatically. You can still edit it.'
+                    : 'Type input here, e.g.  25'
+                }
+                rows={2}
+              />
+            </div>
           </section>
         </div>
       )}

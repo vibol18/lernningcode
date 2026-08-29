@@ -660,6 +660,7 @@ body {
 
 .output-pre {
   flex: 1;
+  min-height: 0;
   margin: 0;
   padding: 14px 16px;
   overflow: auto;
@@ -1089,6 +1090,43 @@ body {
   border-color: var(--accent);
 }
 
+/* Console stdin row (input lives inside the terminal like a real console) */
+.console-stdin {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.console-stdin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+
+.console-stdin-head .input-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.75rem;
+}
+
+.console-stdin-head code {
+  background: var(--code-bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+}
+
+.terminal-input {
+  width: calc(100% - 28px);
+  margin: 0 14px 12px;
+}
+
 /* Live diagnostics bar */
 .live-bar {
   display: flex;
@@ -1368,11 +1406,11 @@ body {
   }
 
   /* stdin box: 16px so iOS doesn't zoom on focus */
-  .input-panel-head {
+  .console-stdin-head {
     padding: 6px 12px;
   }
 
-  .input-panel-head .input-hint {
+  .console-stdin-head .input-hint {
     display: none;
   }
 
