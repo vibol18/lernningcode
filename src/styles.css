@@ -1349,10 +1349,42 @@ body {
 
 /* ---------- Responsive: phones & tablets ---------- */
 @media (max-width: 800px) {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  body,
+  #root,
+  .app {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .app {
+    overflow: visible;
+  }
+
+  .workspace,
+  .main {
+    flex: none;
+  }
+
+  .editor-pane {
+    flex: none;
+    height: 62vh;
+    min-height: 320px;
+  }
+
   .topbar {
     padding: 10px 12px;
     padding-top: calc(10px + env(safe-area-inset-top));
     gap: 8px;
+    flex-wrap: wrap;
+    overflow-x: hidden;
   }
 
   .subtitle,
@@ -1373,6 +1405,8 @@ body {
     gap: 10px;
     padding: 10px 12px;
     align-items: stretch;
+    flex-wrap: wrap;
+    overflow-x: hidden;
   }
 
   .toolbar-group {
