@@ -48,6 +48,18 @@
   background: rgba(220, 38, 38, 0.08);
 }
 
+:root[data-theme='light'] .output-pre[data-status='success'] {
+  color: #14532d;
+}
+
+:root[data-theme='light'] .output-pre[data-status='failed'] {
+  color: #7f1d1d;
+}
+
+:root[data-theme='light'] .console-echo {
+  color: #15803d;
+}
+
 :root[data-theme='light'] .diag-code,
 :root[data-theme='light'] .diag-caret-line {
   color: #7c4a03;
