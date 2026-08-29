@@ -15,6 +15,7 @@ import { SAMPLES } from './lib/samples.js';
 import { PROBLEMS } from './lib/problems.js';
 import { LESSONS } from './lib/lessons.js';
 import { QUIZZES } from './lib/quizzes.js';
+import { formatCode } from './lib/formatCode.js';
 import {
   loadPrograms,
   savePrograms,
@@ -576,6 +577,14 @@ export default function App() {
         </div>
 
         <div className="toolbar-group">
+          <button
+            className="btn btn-ghost"
+            onClick={() => setCode((c) => formatCode(c))}
+            title="Auto-indent and tidy your code"
+          >
+            ≡ Format
+          </button>
+
           <button
             className="btn btn-ghost"
             onClick={() => openConsole(isMobile ? 200 : 300)}
