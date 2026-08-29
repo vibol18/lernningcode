@@ -1193,6 +1193,21 @@ body {
   }
 }
 
+/* Live typed input rendered inline at the end of the output (terminal echo) */
+.console-echo {
+  color: #7ee787;
+}
+
+.console-caret {
+  display: inline-block;
+  width: 8px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: await-blink 1s steps(2, start) infinite;
+}
+
 /* Live diagnostics bar */
 .live-bar {
   display: flex;

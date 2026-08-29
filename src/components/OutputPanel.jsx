@@ -77,13 +77,15 @@ function DiagnosticRow({ d }) {
   );
 }
 
-export function OutputPanel({ output, status }) {
-  if (status === 'idle' && !output) {
+export function OutputPanel({ output, status, echo }) {
+  if (status === 'idle' && !output && !echo) {
     return <div className="output-empty">Press “Run code” to compile and run your program.</div>;
   }
   return (
     <pre className="output-pre" data-status={status} role="status">
-      {output || '(no output)'}
+      {output || ''}
+      {echo ? <span className="console-echo">{echo}<span className="console-caret" /></span> : null}
+      {!output && !echo ? '(no output)' : null}
     </pre>
   );
 }

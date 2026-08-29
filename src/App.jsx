@@ -242,6 +242,7 @@ export default function App() {
       onDone: (exitCode) => {
         runRef.current = null;
         setAwaitingInput(false);
+        setLiveInput('');
         setLastRunInfo({ ok: exitCode === 0, at: new Date() });
         if (exitCode === 0) {
           setStatus('success');
@@ -257,6 +258,7 @@ export default function App() {
       onError: (err) => {
         runRef.current = null;
         setAwaitingInput(false);
+        setLiveInput('');
         if (err && err.stage) {
           setRunError({ message: err.message, output: err.output || '', stage: err.stage });
           setOutput(err.output || '');
@@ -275,6 +277,7 @@ export default function App() {
     if (runRef.current) runRef.current.terminate();
     runRef.current = null;
     setAwaitingInput(false);
+    setLiveInput('');
     setOutput((p) => p + '\n[stopped]\n');
     setStatus('idle');
   }, []);
@@ -789,7 +792,7 @@ export default function App() {
                 Enter input…
               </div>
             )}
-            <OutputPanel output={output} status={status} />
+            <OutputPanel output={output} status={status} echo={isRunning && INTERACTIVE_OK ? liveInput : ''} />
             {INTERACTIVE_OK ? (
               <div className="console-stdin console-live">
                 <div className="console-stdin-head">
