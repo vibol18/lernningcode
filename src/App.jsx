@@ -821,14 +821,21 @@ export default function App() {
                     Type what {awaitingInput ? 'the program is asking for and' : 'your program will read with'} <code>cin</code> / <code>scanf</code>, then press Enter
                   </span>
                 </div>
-                <div className="live-row">
+                <form
+                  className="live-row"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    submitLiveInput();
+                  }}
+                >
                   <input
                     ref={liveInputRef}
                     className="live-input"
+                    type="text"
                     value={liveInput}
                     onChange={(e) => setLiveInput(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                      if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         submitLiveInput();
                       }
@@ -842,13 +849,13 @@ export default function App() {
                     spellCheck={false}
                   />
                   <button
+                    type="submit"
                     className="btn btn-run btn-live-send"
-                    onClick={submitLiveInput}
                     disabled={!isRunning || !liveInput}
                   >
                     Enter ↵
                   </button>
-                </div>
+                </form>
               </div>
             ) : (
               <div className="console-stdin">
