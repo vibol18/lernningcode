@@ -31,10 +31,12 @@ npm run build    # outputs ready-to-host files in client/dist/
 
 Upload the contents of `client/dist/` to any static host:
 
-- **GitHub Pages** — push `dist/` to the `gh-pages` branch (or a `/docs`
-  folder), or use Actions.
-- **Netlify / Vercel / Cloudflare Pages** — set the build command to
-  `npm run build` and the publish directory to `dist`.
+- **Vercel** — the included `vercel.json` points the build at `client/`
+  automatically: install deps there and run `vite build`, publishing `dist`.
+- **GitHub Pages** — push `client/dist/` to the `gh-pages` branch (or a
+  `/docs` folder), or use Actions.
+- **Netlify / Cloudflare Pages** — set the build command to `npm run build`
+  and the publish directory to `dist` (root directory `client`).
 - Anywhere you can drop static files (nginx, S3, etc.).
 
 Paths are relative (`base: './'`), so it also works in a subdirectory.

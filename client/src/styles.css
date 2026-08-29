@@ -69,6 +69,16 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+select {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
   margin: 0;
   font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -1206,23 +1216,48 @@ body {
 .file-btn:hover { border-color: var(--accent); }
 .file-btn.danger:hover { border-color: var(--red); }
 
-/* ---------- Responsive: phones ---------- */
+/* ---------- Responsive: phones & tablets ---------- */
 @media (max-width: 800px) {
   .topbar {
     padding: 10px 12px;
+    padding-top: calc(10px + env(safe-area-inset-top));
+    gap: 8px;
   }
 
-  .subtitle {
-    display: none;
-  }
-
+  .subtitle,
   .hint {
     display: none;
+  }
+
+  .logo {
+    padding: 8px 10px;
+    font-size: 0.82rem;
+  }
+
+  .title-wrap h1 {
+    font-size: 0.98rem;
   }
 
   .toolbar {
     gap: 10px;
     padding: 10px 12px;
+    align-items: stretch;
+  }
+
+  .toolbar-group {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .toolbar-group:not(.samples) {
+    align-items: center;
+  }
+
+  .field select {
+    padding: 9px 12px;
+    font-size: 0.95rem;
+    min-height: 42px;
+    min-width: 0;
   }
 
   .toolbar-group.samples {
@@ -1230,8 +1265,13 @@ body {
     order: 1;
     overflow-x: auto;
     flex-wrap: nowrap;
-    padding-bottom: 4px;
+    padding: 2px 0 4px;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .toolbar-group.samples::-webkit-scrollbar {
+    display: none;
   }
 
   .samples .field-label {
@@ -1241,14 +1281,33 @@ body {
   .chip {
     white-space: nowrap;
     flex-shrink: 0;
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 14px;
   }
 
   .toolbar-group:first-child {
-    flex: 1;
+    flex: 1 1 auto;
+  }
+
+  .toolbar-group:last-child {
+    justify-content: flex-end;
+  }
+
+  .btn,
+  .dropdown-toggle {
+    min-height: 42px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .btn {
+    padding: 10px 14px;
   }
 
   .btn-run {
-    padding: 12px 20px;
+    padding: 10px 18px;
     font-size: 0.95rem;
   }
 
@@ -1256,18 +1315,44 @@ body {
     padding: 8px 12px;
     overflow-x: auto;
     flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+
+  .learn-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .learn-row .field-label {
+    display: none;
   }
 
   .nav-btn {
     white-space: nowrap;
+    min-height: 38px;
+    padding: 8px 15px;
   }
 
   .learn-overlay {
-    padding: 10px;
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .learn-overlay > div {
+    width: 100%;
+    display: flex;
+    justify-content: center;
   }
 
   .panel {
-    max-height: 90vh;
+    max-height: 92vh;
+    max-width: none;
+    border-radius: 16px 16px 0 0;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .panel-head {
+    padding: 12px 14px;
   }
 
   .io-grid {
@@ -1282,11 +1367,85 @@ body {
     flex: 1;
   }
 
+  /* stdin box: 16px so iOS doesn't zoom on focus */
+  .input-panel-head {
+    padding: 6px 12px;
+  }
+
+  .input-panel-head .input-hint {
+    display: none;
+  }
+
+  .input-area {
+    font-size: 16px;
+    width: calc(100% - 24px);
+    margin: 0 12px 10px;
+  }
+
   .console-overlay {
-    padding: 12px;
+    padding: 8px;
+    align-items: flex-end;
   }
 
   .terminal {
-    max-height: 90vh;
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+    overscroll-behavior: contain;
+  }
+
+  .output-pre,
+  .panel {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .terminal-header {
+    border-radius: 16px 16px 0 0;
+  }
+}
+
+/* ---------- Small phones ---------- */
+@media (max-width: 600px) {
+  .brand {
+    gap: 8px;
+  }
+
+  .title-wrap h1 {
+    font-size: 0.9rem;
+  }
+
+  .font-controls {
+    gap: 2px;
+  }
+
+  .fs-val {
+    display: none;
+  }
+
+  /* Language select sits on its own full-width row */
+  .toolbar-group:first-child {
+    width: 100%;
+  }
+
+  .toolbar-group:first-child .field {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .toolbar-group:first-child .field select {
+    width: 100%;
+  }
+
+  .toolbar-group:last-child .btn-run {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .dropdown-menu {
+    min-width: 200px;
+  }
+
+  .banner {
+    padding: 10px 12px;
   }
 }
