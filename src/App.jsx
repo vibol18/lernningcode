@@ -207,6 +207,7 @@ export default function App() {
     setOutput('');
     setConsoleLog([]);
     setAwaitingInput(false);
+    setLiveInput('');
     openConsole(isMobile ? 200 : 300);
 
     // Fallback (no cross-origin isolation): whole stdin supplied up front.
@@ -798,7 +799,7 @@ export default function App() {
               output={output}
               status={status}
               events={INTERACTIVE_OK ? consoleLog : undefined}
-              echo={isRunning && INTERACTIVE_OK ? liveInput : ''}
+              echo={awaitingInput && INTERACTIVE_OK ? liveInput : ''}
             />
             {INTERACTIVE_OK ? (
               <div className="console-stdin console-live">
