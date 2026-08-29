@@ -764,7 +764,7 @@ export default function App() {
         <div className="console-overlay" onClick={() => setConsoleOpen(false)}>
           <section
             className="terminal"
-            style={{ height: consoleHeight }}
+            style={{ height: isMobile ? undefined : consoleHeight }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="pane-header terminal-header">
