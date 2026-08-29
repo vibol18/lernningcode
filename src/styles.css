@@ -1636,3 +1636,142 @@ body {
     padding: 10px 12px;
   }
 }
+
+/* ---- Code → Picture (CodeToImage) ---- */
+.cti-page {
+  min-height: 100vh;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+.cti-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.cti-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.cti-title {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--fg, #e6e9ef);
+}
+.cti-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cti-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted, #9aa3b2);
+}
+.cti-field select,
+.cti-field input[type='text'],
+.cti-field input {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--fg, #e6e9ef);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  min-width: 120px;
+}
+.cti-field input[type='range'] {
+  padding: 0;
+  min-width: 160px;
+  accent-color: #4f8cff;
+}
+.cti-note {
+  position: sticky;
+  top: 60px;
+  z-index: 25;
+  text-align: center;
+  padding: 10px;
+  background: rgba(39, 174, 96, 0.9);
+  color: #fff;
+  font-weight: 600;
+}
+.cti-workspace {
+  display: flex;
+  gap: 16px;
+  padding: 20px;
+  flex: 1;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.cti-preview-scroll {
+  flex: 1;
+  min-width: 320px;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+}
+.cti-preview {
+  transition: width 0.15s ease;
+}
+.cti-window {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  background: #1e1e1e;
+}
+.cti-winbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #1e1e1e;
+}
+.cti-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.cti-filename {
+  margin-left: 8px;
+  color: #9da5b4;
+  font-family: monospace;
+  font-size: 13px;
+}
+.cti-sidebar {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  position: sticky;
+  top: 72px;
+}
+.cti-sidebar .cti-field input[type='text'] {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .cti-preview-scroll {
+    justify-content: flex-start;
+    padding: 12px;
+  }
+  .cti-sidebar {
+    position: static;
+    width: 100%;
+  }
+}

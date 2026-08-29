@@ -36,6 +36,7 @@ import {
   ProblemsPanel,
   QuizPanel,
 } from './components/LearnPanels.jsx';
+import CodeToImage from './components/CodeToImage.jsx';
 
 const DRAFT_KEY = 'ccpp.draft.v1';
 
@@ -94,6 +95,8 @@ export default function App() {
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [savedPrograms, setSavedPrograms] = useState(() => loadPrograms());
   const [clipNotice, setClipNotice] = useState(null);
+  const [showCodeImage, setShowCodeImage] = useState(false);
+  const [imgCode, setImgCode] = useState('');
 
   const editorRef = useRef(null);
 
@@ -519,6 +522,17 @@ export default function App() {
   const editorTheme = theme === 'light' ? githubLight : oneDark;
   const isProblem = activeProblem !== null;
 
+  if (showCodeImage) {
+    return (
+      <CodeToImage
+        onExit={() => setShowCodeImage(false)}
+        initialCode={imgCode || code}
+        initialLanguage={language}
+        initialFileName={`${downloadName || 'program'}.${ext}`}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <header className="topbar">
@@ -618,6 +632,17 @@ export default function App() {
             title="Open the output console"
           >
             Console
+          </button>
+
+          <button
+            className="btn btn-ghost"
+            onClick={() => {
+              setImgCode(code);
+              setShowCodeImage(true);
+            }}
+            title="Turn your code into a 4K picture (all languages)"
+          >
+            ◫ Code → Picture
           </button>
 
           {isProblem ? (
