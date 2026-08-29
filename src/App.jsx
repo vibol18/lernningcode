@@ -834,6 +834,7 @@ export default function App() {
                     autoComplete="off"
                     autoCapitalize="off"
                     autoCorrect="off"
+                    enterKeyHint="send"
                     spellCheck={false}
                   />
                   <button
