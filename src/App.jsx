@@ -125,6 +125,26 @@ export default function App() {
     if (awaitingInput && status === 'running') liveInputRef.current && liveInputRef.current.focus();
   }, [awaitingInput, status]);
 
+  // ---- iOS: keep the console input visible above the on-screen keyboard ----
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const keepInputVisible = () => {
+      if (window.innerWidth > 800) return;
+      const kbOpen = vv.height < window.innerHeight - 80;
+      const el = liveInputRef.current;
+      if (kbOpen && consoleOpen && el) {
+        requestAnimationFrame(() => el.scrollIntoView({ block: 'nearest', behavior: 'auto' }));
+      }
+    };
+    vv.addEventListener('resize', keepInputVisible);
+    vv.addEventListener('scroll', keepInputVisible);
+    return () => {
+      vv.removeEventListener('resize', keepInputVisible);
+      vv.removeEventListener('scroll', keepInputVisible);
+    };
+  }, [consoleOpen]);
+
   // ---- Outside-click close for dropdowns ----
   useEffect(() => {
     if (!downloadOpen && !fileMenuOpen) return;
@@ -289,8 +309,10 @@ export default function App() {
 
   const submitLiveInput = useCallback(() => {
     const text = liveInput;
-    if (!text) return;
     setLiveInput('');
+    // Always send a line, even an empty one: pressing Enter with nothing typed
+    // is a valid keystroke for programs that read a char or a blank line
+    // (getchar(), scanf("%c"), "press Enter to continue", etc.).
     if (runRef.current) runRef.current.sendInput(text + '\n');
     setConsoleLog((p) => [...p, { type: 'in', text: text + '\n' }]);
     setAwaitingInput(false);
@@ -835,12 +857,6 @@ export default function App() {
                     type="text"
                     value={liveInput}
                     onChange={(e) => setLiveInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        submitLiveInput();
-                      }
-                    }}
                     disabled={!isRunning}
                     placeholder={awaitingInput ? 'The program is waiting — type here' : 'Type input, press Enter'}
                     autoComplete="off"
@@ -852,7 +868,7 @@ export default function App() {
                   <button
                     type="submit"
                     className="btn btn-run btn-live-send"
-                    disabled={!isRunning || !liveInput}
+                    disabled={!isRunning}
                   >
                     Enter ↵
                   </button>
@@ -878,12 +894,16 @@ export default function App() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
+                      // Enter runs on desktop (Shift+Enter = newline). On a
+                      // phone there is no Shift+Enter, so Enter inserts a
+                      // newline so multi-line input is actually possible; run
+                      // via the buttons below instead.
+                      if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
                         e.preventDefault();
                         if (!isRunning) runCode();
                       }
                     }}
-                    enterKeyHint="go"
+                    enterKeyHint={isMobile ? 'enter' : 'go'}
                     placeholder={
                       isProblem
                         ? 'This problem provides input automatically. You can still edit it.'
