@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "description": "Web-based C/C++ learning playground — fully static frontend that compiles & runs code in the browser via WebAssembly.",
   "scripts": {
-    "install:client": "npm --prefix client install",
+    "install": "npm --prefix client install",
     "dev": "npm --prefix client run dev",
-    "build": "npm --prefix client run build",
+    "build": "npm --prefix client install && npm --prefix client run build",
     "preview": "npm --prefix client run preview"
   }
 }
