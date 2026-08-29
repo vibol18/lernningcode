@@ -20,23 +20,22 @@ any static host (GitHub Pages, Netlify, Vercel, Cloudflare Pages, etc.).
 
 ## Hosting
 
-The `client/` folder builds to plain static files (HTML/CSS/JS) — no server
-is involved at runtime.
+This is a single static Vite app — the repo root builds to plain static files
+(HTML/CSS/JS). No server is involved at runtime.
 
 ```bash
-cd client
 npm install
-npm run build    # outputs ready-to-host files in client/dist/
+npm run build    # outputs ready-to-host files in dist/
 ```
 
-Upload the contents of `client/dist/` to any static host:
+Upload the contents of `dist/` to any static host:
 
-- **Vercel** — the included `vercel.json` points the build at `client/`
-  automatically: install deps there and run `vite build`, publishing `dist`.
-- **GitHub Pages** — push `client/dist/` to the `gh-pages` branch (or a
-  `/docs` folder), or use Actions.
+- **Vercel** — the included `vercel.json` (framework Vite, build `npm run
+  build`, output `dist`) is applied automatically on push; no settings needed.
+- **GitHub Pages** — push `dist/` to the `gh-pages` branch (or a `/docs`
+  folder), or use Actions.
 - **Netlify / Cloudflare Pages** — set the build command to `npm run build`
-  and the publish directory to `dist` (root directory `client`).
+  and the publish directory to `dist`.
 - Anywhere you can drop static files (nginx, S3, etc.).
 
 Paths are relative (`base: './'`), so it also works in a subdirectory.
@@ -51,7 +50,6 @@ download happens once per browser.
 ### Local development
 
 ```bash
-cd client
 npm install
 npm run dev     # http://localhost:5173
 ```
@@ -59,8 +57,8 @@ npm run dev     # http://localhost:5173
 ## Architecture
 
 ```
-client/  React + Vite + CodeMirror frontend (fully static, no backend)
-dist/    build output — deploy this folder
+src/   React + Vite + CodeMirror frontend (fully static, no backend)
+dist/  build output — deploy this folder
 ```
 
 - Compilation: `browsercc` (clang/LLVM compiled to WebAssembly) runs in the
