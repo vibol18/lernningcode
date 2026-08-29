@@ -1570,10 +1570,7 @@ body {
 
   .terminal {
     width: 100%;
-    height: calc(100vh - 16px) !important;
-    height: calc(100dvh - 16px) !important;
     max-width: calc(100vw - 16px);
-    max-height: none !important;
     border-radius: 12px;
     overscroll-behavior: contain;
   }

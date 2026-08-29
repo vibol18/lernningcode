@@ -210,7 +210,7 @@ export default function App() {
     setConsoleLog([]);
     setAwaitingInput(false);
     setLiveInput('');
-    openConsole(isMobile ? 200 : 300);
+    openConsole(300);
 
     // Fallback (no cross-origin isolation): whole stdin supplied up front.
     if (!INTERACTIVE_OK) {
@@ -311,7 +311,7 @@ export default function App() {
     setNetworkError(null);
     setCheckResult(null);
     setChecking(true);
-    openConsole(isMobile ? 260 : 340);
+    openConsole(340);
     try {
       const res = await browserCheckSolution({ code, language, input: p.input, expected: p.expected });
       setStatus('success');
@@ -591,7 +591,7 @@ export default function App() {
 
           <button
             className="btn btn-ghost"
-            onClick={() => openConsole(isMobile ? 200 : 300)}
+            onClick={() => openConsole(300)}
             title="Open the output console"
           >
             Console
