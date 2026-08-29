@@ -147,7 +147,7 @@ export default function App() {
   useEffect(() => {
     const draft = readDraft();
     if (draft && draft.code) {
-      setCode(draft.code);
+      setCode(draft.code.trim() ? draft.code : SAMPLES.cpp.hello.code);
       if (draft.language) setLanguage(draft.language);
       if (typeof draft.input === 'string') setInput(draft.input);
       if (draft.name) setDownloadName(draft.name);

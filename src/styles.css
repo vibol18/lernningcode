@@ -1368,15 +1368,20 @@ body {
     overflow: visible;
   }
 
-  .workspace,
+  .workspace {
+    flex: 1;
+    min-height: 0;
+  }
+
   .main {
-    flex: none;
+    flex: 1;
+    min-height: 0;
   }
 
   .editor-pane {
-    flex: none;
-    height: 62vh;
-    min-height: 320px;
+    flex: 1;
+    height: auto;
+    min-height: 65vh;
   }
 
   .topbar {
