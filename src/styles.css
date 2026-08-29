@@ -1127,6 +1127,72 @@ body {
   margin: 0 14px 12px;
 }
 
+/* Interactive console prompt (Worker mode) */
+.console-live {
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.live-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 12px;
+}
+
+.live-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--code-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  outline: none;
+}
+
+.live-input:focus {
+  border-color: var(--accent);
+}
+
+.btn-live-send {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.input-await {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin: 8px 16px 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(39, 201, 63, 0.1);
+  border: 1px solid rgba(39, 201, 63, 0.35);
+  color: var(--text);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.await-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #27c93f;
+  animation: await-blink 1s steps(2, start) infinite;
+}
+
+@keyframes await-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
 /* Live diagnostics bar */
 .live-bar {
   display: flex;
@@ -1414,8 +1480,12 @@ body {
     display: none;
   }
 
-  .input-area {
+  .input-area,
+  .live-input {
     font-size: 16px;
+  }
+
+  .input-area {
     width: calc(100% - 24px);
     margin: 0 12px 10px;
   }

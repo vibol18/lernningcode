@@ -70,6 +70,8 @@ dist/  build output — deploy this folder
 
 - One-time ~90 MB download on first run (cached afterwards).
 - Compiling is slower than native gcc (roughly 1–2 s for typical samples).
-- An infinite loop in user code will freeze the tab (browser WASM cannot be
-  interrupted from JavaScript).
+- The program runs in a Web Worker (enabled by COOP/COEP headers, see
+  `vercel.json`), so input can be typed into the Console interactively while
+  the program waits, and an infinite loop can be killed with **■ Stop**
+  instead of freezing the tab.
 - No exceptions or threading support in the WASM sysroot.

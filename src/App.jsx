@@ -8,6 +8,8 @@ import {
   browserCompileAndRun,
   browserCheckSolution,
   preloadCompiler,
+  startInteractiveRun,
+  INTERACTIVE_OK,
 } from './lib/browserCompiler.js';
 import { SAMPLES } from './lib/samples.js';
 import { PROBLEMS } from './lib/problems.js';
@@ -70,6 +72,12 @@ export default function App() {
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleHeight, setConsoleHeight] = useState(300);
 
+  // Interactive console input (Worker + SharedArrayBuffer)
+  const [awaitingInput, setAwaitingInput] = useState(false);
+  const [liveInput, setLiveInput] = useState('');
+  const runRef = useRef(null);
+  const liveInputRef = useRef(null);
+
   // Learn + settings
   const [learnTab, setLearnTab] = useState('none');
   const [activeProblem, setActiveProblem] = useState(null);
@@ -108,6 +116,11 @@ export default function App() {
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, []);
+
+  // ---- Focus the console input whenever the program asks for input ----
+  useEffect(() => {
+    if (awaitingInput && isRunning) liveInputRef.current && liveInputRef.current.focus();
+  }, [awaitingInput, isRunning]);
 
   // ---- Outside-click close for dropdowns ----
   useEffect(() => {
@@ -185,32 +198,95 @@ export default function App() {
   };
 
   // ---- Run ----
-  const runCode = useCallback(async () => {
+  const runCode = useCallback(() => {
     setRunError(null);
     setNetworkError(null);
     setCheckResult(null);
     setStatus('running');
     setOutput('');
+    setAwaitingInput(false);
     openConsole(isMobile ? 200 : 300);
-    try {
-      const result = await browserCompileAndRun({ code, language, input });
-      setOutput(result.output);
-      setStatus('success');
-      setLastRunInfo({ ok: true, at: new Date() });
-    } catch (err) {
-      const stage = err && err.stage;
-      const message = (err && err.message) || 'Unexpected error while running your program.';
-      const out = (err && err.output) || '';
-      if (stage) {
-        setRunError({ message, output: out, stage: stage || 'compile' });
-        setOutput(out);
-        setStatus('failed');
-      } else {
-        setNetworkError(message);
-        setStatus('idle');
-      }
+
+    // Fallback (no cross-origin isolation): whole stdin supplied up front.
+    if (!INTERACTIVE_OK) {
+      browserCompileAndRun({ code, language, input })
+        .then((result) => {
+          setOutput(result.output);
+          setStatus('success');
+          setLastRunInfo({ ok: true, at: new Date() });
+        })
+        .catch((err) => {
+          const stage = err && err.stage;
+          const message = (err && err.message) || 'Unexpected error while running your program.';
+          const out = (err && err.output) || '';
+          if (stage) {
+            setRunError({ message, output: out, stage: stage || 'compile' });
+            setOutput(out);
+            setStatus('failed');
+          } else {
+            setNetworkError(message);
+            setStatus('idle');
+          }
+        });
+      return;
     }
+
+    // Interactive: program runs in a Worker; type input into the Console
+    // whenever the program asks for it.
+    const handle = startInteractiveRun({
+      code,
+      language,
+      onStdout: (t) => setOutput((p) => p + t),
+      onStderr: (t) => setOutput((p) => p + t),
+      onNeedInput: () => setAwaitingInput(true),
+      onDone: (exitCode) => {
+        runRef.current = null;
+        setAwaitingInput(false);
+        setLastRunInfo({ ok: exitCode === 0, at: new Date() });
+        if (exitCode === 0) {
+          setStatus('success');
+        } else {
+          setStatus('failed');
+          setRunError({
+            message: `Your program exited with code ${exitCode}.`,
+            stage: 'runtime',
+            output: '',
+          });
+        }
+      },
+      onError: (err) => {
+        runRef.current = null;
+        setAwaitingInput(false);
+        if (err && err.stage) {
+          setRunError({ message: err.message, output: err.output || '', stage: err.stage });
+          setOutput(err.output || '');
+          setStatus('failed');
+        } else {
+          setNetworkError((err && err.message) || 'Could not run your program.');
+          setStatus('idle');
+        }
+      },
+    });
+    runRef.current = handle;
+    if (input) handle.sendInput(input);
   }, [code, language, input, isMobile]);
+
+  const stopRun = useCallback(() => {
+    if (runRef.current) runRef.current.terminate();
+    runRef.current = null;
+    setAwaitingInput(false);
+    setOutput((p) => p + '\n[stopped]\n');
+    setStatus('idle');
+  }, []);
+
+  const submitLiveInput = useCallback(() => {
+    const text = liveInput;
+    if (!text) return;
+    setLiveInput('');
+    if (runRef.current) runRef.current.sendInput(text + '\n');
+    setOutput((p) => p + text + '\n');
+    setAwaitingInput(false);
+  }, [liveInput]);
 
   const openConsole = useCallback((height) => {
     setConsoleOpen(true);
@@ -698,32 +774,79 @@ export default function App() {
                   </span>
                 )}
               </span>
+              <button className="icon-btn" onClick={stopRun} title="Stop program (also kills infinite loops)" disabled={!isRunning}>
+                ■ Stop
+              </button>
               <button className="icon-btn" onClick={() => setConsoleOpen(false)} title="Close console">
                 ✕
               </button>
             </div>
             <CompileErrorBanner error={runError} sourceLines={code.split('\n')} />
             <CheckResultBanner result={checkResult} />
-            <OutputPanel output={output} status={status} />
-            <div className="console-stdin">
-              <div className="console-stdin-head">
-                <span>Program input (stdin)</span>
-                <span className="input-hint">
-                  Type what your program reads with <code>cin</code> / <code>scanf</code>, then press Run
-                </span>
+            {awaitingInput && (
+              <div className="input-await">
+                <span className="await-dot" />
+                Enter input…
               </div>
-              <textarea
-                className="input-area terminal-input"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={
-                  isProblem
-                    ? 'This problem provides input automatically. You can still edit it.'
-                    : 'Type input here, e.g.  25'
-                }
-                rows={2}
-              />
-            </div>
+            )}
+            <OutputPanel output={output} status={status} />
+            {INTERACTIVE_OK ? (
+              <div className="console-stdin console-live">
+                <div className="console-stdin-head">
+                  <span>Console input</span>
+                  <span className="input-hint">
+                    Type what {awaitingInput ? 'the program is asking for and' : 'your program will read with'} <code>cin</code> / <code>scanf</code>, then press Enter
+                  </span>
+                </div>
+                <div className="live-row">
+                  <input
+                    ref={liveInputRef}
+                    className="live-input"
+                    value={liveInput}
+                    onChange={(e) => setLiveInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        submitLiveInput();
+                      }
+                    }}
+                    disabled={!isRunning}
+                    placeholder={awaitingInput ? 'The program is waiting — type here' : 'Type input, press Enter'}
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                  <button
+                    className="btn btn-run btn-live-send"
+                    onClick={submitLiveInput}
+                    disabled={!isRunning || !liveInput}
+                  >
+                    Enter ↵
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="console-stdin">
+                <div className="console-stdin-head">
+                  <span>Program input (stdin)</span>
+                  <span className="input-hint">
+                    Type what your program reads with <code>cin</code> / <code>scanf</code>, then press Run
+                  </span>
+                </div>
+                <textarea
+                  className="input-area terminal-input"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={
+                    isProblem
+                      ? 'This problem provides input automatically. You can still edit it.'
+                      : 'Type input here, e.g.  25'
+                  }
+                  rows={2}
+                />
+              </div>
+            )}
           </section>
         </div>
       )}
