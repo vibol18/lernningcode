@@ -1143,6 +1143,7 @@ body {
 .console-live {
   border-top: 1px solid var(--border);
   background: var(--panel);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .live-row {
@@ -1562,6 +1563,7 @@ body {
 
   .console-overlay {
     padding: 8px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
     align-items: center;
     justify-content: center;
   }
