@@ -5,12 +5,6 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { githubLight } from '@uiw/codemirror-theme-github';
 import { toPng } from 'html-to-image';
 import {
-  compileAndRun,
-  checkSolution,
-  lintCode,
-  CompilerError,
-} from './lib/compiler.js';
-import {
   browserCompileAndRun,
   browserCheckSolution,
 } from './lib/browserCompiler.js';
@@ -26,7 +20,6 @@ import {
   loadFontSize,
   saveFontSize,
 } from './lib/storage.js';
-import { parseCompilerOutput } from './lib/parseErrors.js';
 import {
   OutputPanel,
   NetworkErrorBanner,
@@ -60,8 +53,6 @@ function writeDraft(d) {
 
 export default function App() {
   const [language, setLanguage] = useState('cpp');
-  const [compiler, setCompiler] = useState('auto');
-  const [runMode, setRunMode] = useState('server');
   const [code, setCode] = useState(SAMPLES.cpp.hello.code);
   const [output, setOutput] = useState('');
   const [status, setStatus] = useState('idle');
@@ -92,18 +83,7 @@ export default function App() {
   const [savedPrograms, setSavedPrograms] = useState(() => loadPrograms());
   const [clipNotice, setClipNotice] = useState(null);
 
-  // Live diagnostics
-  const [liveDiags, setLiveDiags] = useState(null);
-
   const editorRef = useRef(null);
-  const liveTimer = useRef(null);
-  const codeRef = useRef(code);
-  codeRef.current = code;
-  const languageRef = useRef(language);
-  languageRef.current = language;
-  const runModeRef = useRef(runMode);
-  runModeRef.current = runMode;
-  const lintRunning = useRef(false);
 
   // ---- Theme + font size side effects ----
   useEffect(() => {
@@ -137,10 +117,10 @@ export default function App() {
   // ---- Autosave draft (debounced) ----
   useEffect(() => {
     const t = setTimeout(() => {
-      writeDraft({ code, language, compiler, input, name: downloadName, runMode });
+      writeDraft({ code, language, input, name: downloadName });
     }, 600);
     return () => clearTimeout(t);
-  }, [code, language, compiler, input, downloadName, runMode]);
+  }, [code, language, input, downloadName]);
 
   // ---- Restore draft on mount (runs once) ----
   useEffect(() => {
@@ -148,8 +128,6 @@ export default function App() {
     if (draft && draft.code) {
       setCode(draft.code);
       if (draft.language) setLanguage(draft.language);
-      if (draft.compiler) setCompiler(draft.compiler);
-      if (draft.runMode) setRunMode(draft.runMode);
       if (typeof draft.input === 'string') setInput(draft.input);
       if (draft.name) setDownloadName(draft.name);
     }
@@ -169,7 +147,7 @@ export default function App() {
         setCheckResult(null);
         setOutput('');
         setStatus('idle');
-        writeDraft({ code: shared, language, compiler, input, name: downloadName });
+        writeDraft({ code: shared, language, input, name: downloadName });
       }
     } catch {
       /* invalid share code — ignore */
@@ -178,34 +156,6 @@ export default function App() {
   }, []);
 
   const isRunning = status === 'running';
-
-  // ---- Live compile-as-you-type ----
-  const triggerLiveLint = useCallback(async () => {
-    // Live syntax checking is a server-side feature (it needs gcc-style
-    // syntax-only compile). In browser mode there is no backend, so skip it.
-    if (runModeRef.current !== 'server') return;
-    const current = codeRef.current;
-    if (!current.trim() || lintRunning.current) return;
-    lintRunning.current = true;
-    try {
-      const res = await lintCode({ code: current, language: languageRef.current });
-      setLiveDiags(parseCompilerOutput(res.output, current.split('\n')));
-    } catch {
-      // server offline — clear live diags silently
-      setLiveDiags(null);
-    } finally {
-      lintRunning.current = false;
-    }
-  }, []);
-
-  useEffect(() => {
-    setLiveDiags(null);
-    clearTimeout(liveTimer.current);
-    liveTimer.current = setTimeout(() => {
-      triggerLiveLint();
-    }, 1100);
-    return () => clearTimeout(liveTimer.current);
-  }, [code, triggerLiveLint]);
 
   // ---- Apply sample / problem / lesson ----
   const applyCode = useCallback(
@@ -237,22 +187,15 @@ export default function App() {
     setOutput('');
     openConsole(isMobile ? 200 : 300);
     try {
-      const result =
-        runMode === 'browser'
-          ? await browserCompileAndRun({ code, language, input })
-          : await compileAndRun({ code, language, compiler, input });
+      const result = await browserCompileAndRun({ code, language, input });
       setOutput(result.output);
       setStatus('success');
       setLastRunInfo({ ok: true, at: new Date() });
     } catch (err) {
-      const isCE = err instanceof CompilerError;
-      const stage = isCE ? err.stage : err && err.stage;
-      const message = isCE ? err.message : (err && err.message) || 'Unexpected error while running your program.';
-      const out = isCE ? err.output || '' : (err && err.output) || '';
-      if (isCE && (stage === 'network' || stage === 'http')) {
-        setNetworkError(message);
-        setStatus('idle');
-      } else if (isCE || stage) {
+      const stage = err && err.stage;
+      const message = (err && err.message) || 'Unexpected error while running your program.';
+      const out = (err && err.output) || '';
+      if (stage) {
         setRunError({ message, output: out, stage: stage || 'compile' });
         setOutput(out);
         setStatus('failed');
@@ -261,7 +204,7 @@ export default function App() {
         setStatus('idle');
       }
     }
-  }, [code, language, compiler, input, runMode, isMobile]);
+  }, [code, language, input, isMobile]);
 
   const openConsole = useCallback((height) => {
     setConsoleOpen(true);
@@ -278,26 +221,19 @@ export default function App() {
     setChecking(true);
     openConsole(isMobile ? 260 : 340);
     try {
-      const res =
-        runMode === 'browser'
-          ? await browserCheckSolution({ code, language, input: p.input, expected: p.expected })
-          : await checkSolution({ code, language, input: p.input, expected: p.expected });
+      const res = await browserCheckSolution({ code, language, input: p.input, expected: p.expected });
       setStatus('success');
       setOutput(res.output);
       setCheckResult({ passed: res.passed, output: res.output, expected: res.expected });
     } catch (err) {
-      const isCE = err instanceof CompilerError;
-      const stage = isCE ? err.stage : err && err.stage;
-      if (isCE && (stage === 'network' || stage === 'http')) {
-        setNetworkError(isCE ? err.message : 'Could not check your solution.');
-        setStatus('idle');
-      } else if (isCE || stage) {
+      const stage = err && err.stage;
+      if (stage) {
         setRunError({
-          message: isCE ? err.message : (err && err.message) || 'Could not run your solution.',
-          output: isCE ? err.output || '' : (err && err.output) || '',
+          message: (err && err.message) || 'Could not run your solution.',
+          output: (err && err.output) || '',
           stage: stage || 'compile',
         });
-        setOutput((isCE ? err.output : (err && err.output)) || '');
+        setOutput((err && err.output) || '');
         setStatus('failed');
       } else {
         setNetworkError((err && err.message) || 'Could not check your solution.');
@@ -307,7 +243,7 @@ export default function App() {
       setChecking(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProblem, code, language, runMode, isMobile]);
+  }, [activeProblem, code, language, isMobile]);
 
   // ---- Select problem / lesson ----
   const selectProblem = useCallback(
@@ -421,14 +357,13 @@ export default function App() {
       name: downloadName.trim() || 'my_program',
       code,
       language,
-      compiler,
       updatedAt: Date.now(),
     };
     if (idx >= 0) updated[idx] = rec;
     else updated.unshift(rec);
     setSavedPrograms(updated);
     savePrograms(updated);
-  }, [savedPrograms, downloadName, code, language, compiler]);
+  }, [savedPrograms, downloadName, code, language]);
 
   const deleteProgram = useCallback(
     (name) => {
@@ -443,7 +378,6 @@ export default function App() {
     (s) => {
       setLanguage(s.language || 'cpp');
       setCode(s.code);
-      setCompiler(s.compiler || 'auto');
       setDownloadName(s.name);
       setRunError(null);
       setCheckResult(null);
@@ -466,7 +400,6 @@ export default function App() {
   }, [runCode, isRunning]);
 
   const samples = SAMPLES[language];
-  const liveErrorCount = liveDiags ? liveDiags.errors.length : 0;
 
   const editorTheme = theme === 'light' ? githubLight : oneDark;
   const isProblem = activeProblem !== null;
@@ -537,31 +470,6 @@ export default function App() {
             >
               <option value="c">C</option>
               <option value="cpp">C++</option>
-            </select>
-          </label>
-          {language === 'cpp' && (
-            <label className="field">
-              Compiler
-              <select
-                value={compiler}
-                onChange={(e) => setCompiler(e.target.value)}
-                disabled={isRunning}
-              >
-                <option value="auto">Auto (g++)</option>
-                <option value="gcc">gcc</option>
-              </select>
-            </label>
-          )}
-          <label className="field">
-            Run mode
-            <select
-              value={runMode}
-              onChange={(e) => setRunMode(e.target.value)}
-              disabled={isRunning}
-              title="Server uses the backend compiler; Browser runs an in-browser compiler (works on any static host, needs internet on first run)"
-            >
-              <option value="server">Server</option>
-              <option value="browser">Browser (static host)</option>
             </select>
           </label>
         </div>
@@ -727,15 +635,8 @@ export default function App() {
       <div className="workspace">
         <div className="live-bar">
           <span className="live-dot">
-            {status === 'running'
-              ? 'Running…'
-              : liveDiags === null
-              ? 'Live errors: —'
-              : `Live errors: ${liveErrorCount}`}
+            {status === 'running' ? 'Running…' : 'In-browser compiler · first run downloads ~90 MB'}
           </span>
-          {liveErrorCount > 0 && (
-            <span className="live-error-badge">{liveDiags.errors.length} error(s) · {liveDiags.warnings.length} warning(s)</span>
-          )}
           {cursor.line > 0 && (
             <span className="cursor-pos">
               Ln {cursor.line}, Col {cursor.col}

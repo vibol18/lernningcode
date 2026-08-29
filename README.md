@@ -1,65 +1,75 @@
 # C/C++ Learning Playground
 
 A web app where students can **write, compile, and run** C and C++ programs
-entirely in the browser — no phone, no local compiler needed. Everything runs
-through a small backend that uses the machine's `gcc`/`g++`.
+entirely in the browser — no phone, no local compiler, no backend needed.
+Compilation happens inside the browser using **clang/LLVM compiled to
+WebAssembly** (`browsercc`), so the app is 100% static and can be hosted on
+any static host (GitHub Pages, Netlify, Vercel, Cloudflare Pages, etc.).
 
 ## Features
 
 - In-browser code editor (CodeMirror) with C/C++ syntax highlighting
-- Compile & run on the server using real `gcc` / `g++`
-- Clear error messages for compilation errors, runtime crashes (segfault),
-  and infinite loops (timeouts)
-- Built-in example programs for C and C++
-- **Robust React error handling**: a top-level Error Boundary catches any
-  React rendering error and shows a friendly fallback UI instead of a
-  blank/white page (see `client/src/components/ErrorBoundary.jsx`). Network
-  and compile errors are normalized and displayed separately.
+- Compile & run C/C++ entirely in the browser via wasm-clang (`browsercc`)
+- Program input (stdin) support — works with `scanf`, `std::cin`, `fgets`, etc.
+- Clear error messages for compilation errors and runtime crashes
+- Built-in example programs, lessons, practice problems, and quizzes for C and C++
+- File manager: save programs to localStorage, download as `.c`/`.cpp` file or PNG
+- Share links (`#code=...` in the URL), copy code, dark/light themes
+- Robust React error handling via a top-level Error Boundary
 - Keyboard shortcut: `Ctrl+Enter` to run code
 
-## Requirements
+## Hosting
 
-- Node.js 18+
-- `gcc` and `g++` installed on the machine running the **server**
-
-## Setup & run
+The `client/` folder builds to plain static files (HTML/CSS/JS) — no server
+is involved at runtime.
 
 ```bash
-# 1. install all dependencies
-npm run install:all
-
-# 2. run both the backend (port 4000) and frontend (port 5173)
-npm run dev
+cd client
+npm install
+npm run build    # outputs ready-to-host files in client/dist/
 ```
 
-Then open http://localhost:5173 in a browser.
+Upload the contents of `client/dist/` to any static host:
 
-### Run separately
+- **GitHub Pages** — push `dist/` to the `gh-pages` branch (or a `/docs`
+  folder), or use Actions.
+- **Netlify / Vercel / Cloudflare Pages** — set the build command to
+  `npm run build` and the publish directory to `dist`.
+- Anywhere you can drop static files (nginx, S3, etc.).
+
+Paths are relative (`base: './'`), so it also works in a subdirectory.
+
+### First-run note
+
+The compiler binary (clang + lld, ~90 MB) is streamed from the
+[jsDelivr](https://www.jsdelivr.com/) CDN on the first run, then cached by the
+browser. Users need internet access on their first compile. A large first-run
+download happens once per browser.
+
+### Local development
 
 ```bash
-# terminal 1 — backend compiler API
-npm run dev:server
-
-# terminal 2 — frontend dev server
-npm run dev:client
+cd client
+npm install
+npm run dev     # http://localhost:5173
 ```
 
 ## Architecture
 
 ```
-client/  React + Vite + CodeMirror frontend
-server/  Express backend that compiles & runs C/C++ code
+client/  React + Vite + CodeMirror frontend (fully static, no backend)
+dist/    build output — deploy this folder
 ```
 
-- Frontend sends code to `POST /api/compile` on the backend.
-- Backend writes the source to a temp file, compiles with `gcc`/`g++`, runs
-  the binary with a timeout, and returns `stdout`/`stderr` plus a friendly
-  error message when something goes wrong.
-- Temp files are cleaned up after each run.
+- Compilation: `browsercc` (clang/LLVM compiled to WebAssembly) runs in the
+  browser tab; C is compiled with `clang++ -x c`, C++ with `-std=c++17`.
+- Execution: the resulting WASM binary runs under `@bjorn3/browser_wasi_shim`,
+  with the program-input box wired to stdin and output shown in the console.
 
-## Security notes
+### Trade-offs vs. a native compiler
 
-This server executes arbitrary user-submitted C/C++ code on the host machine.
-It is intended for a trusted, internal learning environment only. Do **not**
-expose it to the public internet without extra isolation (containers, resource
-limits, firewalls, etc.).
+- One-time ~90 MB download on first run (cached afterwards).
+- Compiling is slower than native gcc (roughly 1–2 s for typical samples).
+- An infinite loop in user code will freeze the tab (browser WASM cannot be
+  interrupted from JavaScript).
+- No exceptions or threading support in the WASM sysroot.

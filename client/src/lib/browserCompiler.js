@@ -48,7 +48,9 @@ function langFile(language) {
 }
 
 function langFlags(language) {
-  return language === 'cpp' ? ['-std=c++17', '-O0', '-Wall'] : ['-std=c11', '-O0', '-Wall'];
+  return language === 'cpp'
+    ? ['-std=c++17', '-O0', '-Wall']
+    : ['-x', 'c', '-O0', '-Wall'];
 }
 
 function normalizeOutput(str) {
@@ -93,7 +95,7 @@ export async function browserCompileAndRun({ code, language, input }) {
   const decoder = new TextDecoder();
 
   const fds = [
-    new OpenFile(new File([new TextEncoder().encode(input || '')])), // stdin
+    new OpenFile(new File(new TextEncoder().encode(input || ''))), // stdin
     new ConsoleStdout((buf) => stdoutParts.push(decoder.decode(buf))),
     new ConsoleStdout((buf) => stderrParts.push(decoder.decode(buf))),
   ];
