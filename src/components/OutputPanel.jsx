@@ -77,15 +77,30 @@ function DiagnosticRow({ d }) {
   );
 }
 
-export function OutputPanel({ output, status, echo }) {
-  if (status === 'idle' && !output && !echo) {
+export function OutputPanel({ output, status, events, echo }) {
+  if (status === 'idle' && !output && !echo && !events?.length) {
     return <div className="output-empty">Press “Run code” to compile and run your program.</div>;
   }
   return (
     <pre className="output-pre" data-status={status} role="status">
-      {output || ''}
-      {echo ? <span className="console-echo">{echo}<span className="console-caret" /></span> : null}
-      {!output && !echo ? '(no output)' : null}
+      {events && events.length > 0
+        ? events.map((ev, i) =>
+            ev.type === 'out' ? (
+              <span key={i}>{ev.text}</span>
+            ) : (
+              <span key={i} className="console-echo">
+                {ev.text}
+              </span>
+            )
+          )
+        : output || ''}
+      {echo ? (
+        <span className="console-echo">
+          {echo}
+          <span className="console-caret" />
+        </span>
+      ) : null}
+      {!output && !echo && !(events && events.length) ? '(no output)' : null}
     </pre>
   );
 }

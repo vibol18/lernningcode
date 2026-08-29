@@ -75,6 +75,7 @@ export default function App() {
   // Interactive console input (Worker + SharedArrayBuffer)
   const [awaitingInput, setAwaitingInput] = useState(false);
   const [liveInput, setLiveInput] = useState('');
+  const [consoleLog, setConsoleLog] = useState([]);
   const runRef = useRef(null);
   const liveInputRef = useRef(null);
 
@@ -204,6 +205,7 @@ export default function App() {
     setCheckResult(null);
     setStatus('running');
     setOutput('');
+    setConsoleLog([]);
     setAwaitingInput(false);
     openConsole(isMobile ? 200 : 300);
 
@@ -236,8 +238,8 @@ export default function App() {
     const handle = startInteractiveRun({
       code,
       language,
-      onStdout: (t) => setOutput((p) => p + t),
-      onStderr: (t) => setOutput((p) => p + t),
+      onStdout: (t) => setConsoleLog((p) => [...p, { type: 'out', text: t }]),
+      onStderr: (t) => setConsoleLog((p) => [...p, { type: 'out', text: t }]),
       onNeedInput: () => setAwaitingInput(true),
       onDone: (exitCode) => {
         runRef.current = null;
@@ -287,7 +289,7 @@ export default function App() {
     if (!text) return;
     setLiveInput('');
     if (runRef.current) runRef.current.sendInput(text + '\n');
-    setOutput((p) => p + text + '\n');
+    setConsoleLog((p) => [...p, { type: 'in', text: text + '\n' }]);
     setAwaitingInput(false);
   }, [liveInput]);
 
@@ -792,7 +794,12 @@ export default function App() {
                 Enter input…
               </div>
             )}
-            <OutputPanel output={output} status={status} echo={isRunning && INTERACTIVE_OK ? liveInput : ''} />
+            <OutputPanel
+              output={output}
+              status={status}
+              events={INTERACTIVE_OK ? consoleLog : undefined}
+              echo={isRunning && INTERACTIVE_OK ? liveInput : ''}
+            />
             {INTERACTIVE_OK ? (
               <div className="console-stdin console-live">
                 <div className="console-stdin-head">
