@@ -293,6 +293,9 @@ export default function App() {
     if (runRef.current) runRef.current.sendInput(text + '\n');
     setConsoleLog((p) => [...p, { type: 'in', text: text + '\n' }]);
     setAwaitingInput(false);
+    if (liveInputRef.current) {
+      requestAnimationFrame(() => liveInputRef.current && liveInputRef.current.focus());
+    }
   }, [liveInput]);
 
   const openConsole = useCallback((height) => {
