@@ -119,8 +119,8 @@ export default function App() {
 
   // ---- Focus the console input whenever the program asks for input ----
   useEffect(() => {
-    if (awaitingInput && isRunning) liveInputRef.current && liveInputRef.current.focus();
-  }, [awaitingInput, isRunning]);
+    if (awaitingInput && status === 'running') liveInputRef.current && liveInputRef.current.focus();
+  }, [awaitingInput, status]);
 
   // ---- Outside-click close for dropdowns ----
   useEffect(() => {
