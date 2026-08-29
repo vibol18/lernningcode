@@ -1,8 +1,8 @@
 export const SAMPLES = {
-  c: {
-    hello: {
-      name: 'Hello, World!',
-      code: `#include <stdio.h>
+    c: {
+        hello: {
+            name: 'Hello, World!',
+            code: `#include <stdio.h>
 
 int main() {
     printf("Hello, World!\\n");
@@ -10,10 +10,10 @@ int main() {
     return 0;
 }
 `,
-    },
-    loop: {
-      name: 'Loop example',
-      code: `#include <stdio.h>
+        },
+        loop: {
+            name: 'Loop example',
+            code: `#include <stdio.h>
 
 int main() {
     int sum = 0;
@@ -24,10 +24,10 @@ int main() {
     return 0;
 }
 `,
-    },
-    segfault: {
-      name: 'Bug: segmentation fault',
-      code: `#include <stdio.h>
+        },
+        segfault: {
+            name: 'Bug: segmentation fault',
+            code: `#include <stdio.h>
 
 int main() {
     // This tries to write to an invalid memory location.
@@ -37,10 +37,10 @@ int main() {
     return 0;
 }
 `,
-    },
-    infinite: {
-      name: 'Bug: infinite loop',
-      code: `#include <stdio.h>
+        },
+        infinite: {
+            name: 'Bug: infinite loop',
+            code: `#include <stdio.h>
 
 int main() {
     int i = 0;
@@ -50,23 +50,23 @@ int main() {
     return 0;
 }
 `,
+        },
     },
-  },
-  cpp: {
-    hello: {
-      name: 'Hello, World!',
-      code: `#include <iostream>
-
+    cpp: {
+        hello: {
+            name: 'Hello, World!',
+            code: `#include <iostream>
+using namespace std;
 int main() {
-    std::cout << "Hello, World!" << std::endl;
-    std::cout << "Welcome to learning C++!" << std::endl;
+    cout << "Hello, World!" <<endl;
+    cout << "Welcome to learning C++!" <<endl;
     return 0;
 }
 `,
-    },
-    classes: {
-      name: 'Simple class',
-      code: `#include <iostream>
+        },
+        classes: {
+            name: 'Simple class',
+            code: `#include <iostream>
 
 class Animal {
 public:
@@ -92,10 +92,10 @@ int main() {
     return 0;
 }
 `,
-    },
-    vector: {
-      name: 'STL vector',
-      code: `#include <iostream>
+        },
+        vector: {
+            name: 'STL vector',
+            code: `#include <iostream>
 #include <vector>
 #include <algorithm>
 
@@ -110,8 +110,8 @@ int main() {
     return 0;
 }
 `,
+        },
     },
-  },
 };
 
 export const DEFAULT_CODE = SAMPLES.c.hello.code;

@@ -16,6 +16,7 @@ import { PROBLEMS } from './lib/problems.js';
 import { LESSONS } from './lib/lessons.js';
 import { QUIZZES } from './lib/quizzes.js';
 import { formatCode } from './lib/formatCode.js';
+import { cppAutocomplete } from './lib/cppAutocomplete.js';
 import {
   loadPrograms,
   savePrograms,
@@ -758,7 +759,7 @@ export default function App() {
                   setCursor({ line: line.number, col: pos - line.from + 1 });
                 }
               }}
-              extensions={[cpp()]}
+              extensions={[cpp(), cppAutocomplete()]}
               theme={editorTheme}
               basicSetup={{
                 highlightActiveLine: true,
