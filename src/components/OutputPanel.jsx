@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseCompilerOutput } from '../lib/parseErrors.js';
 
 export function NetworkErrorBanner({ message }) {
@@ -78,11 +78,17 @@ function DiagnosticRow({ d }) {
 }
 
 export function OutputPanel({ output, status, events, echo }) {
+  const preRef = useRef(null);
+  useEffect(() => {
+    const el = preRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [output, events, echo, status]);
+
   if (status === 'idle' && !output && !echo && !events?.length) {
     return <div className="output-empty">Press “Run code” to compile and run your program.</div>;
   }
   return (
-    <pre className="output-pre" data-status={status} role="status">
+    <pre className="output-pre" data-status={status} role="status" ref={preRef}>
       {events && events.length > 0
         ? events.map((ev, i) =>
             ev.type === 'out' ? (
