@@ -1518,15 +1518,16 @@ body {
   }
 
   .console-overlay {
-    padding: 12px;
+    padding: 8px;
     align-items: center;
     justify-content: center;
   }
 
   .terminal {
     width: 100%;
-    height: calc(100dvh - 24px);
-    max-width: calc(100vw - 24px);
+    height: calc(100vh - 16px);
+    height: calc(100dvh - 16px);
+    max-width: calc(100vw - 16px);
     max-height: none;
     border-radius: 12px;
     overscroll-behavior: contain;
