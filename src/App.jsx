@@ -866,27 +866,41 @@ export default function App() {
                     Type what your program reads with <code>cin</code> / <code>scanf</code>, then press Run
                   </span>
                 </div>
-                <textarea
-                  className="input-area terminal-input"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder={
-                    isProblem
-                      ? 'This problem provides input automatically. You can still edit it.'
-                      : 'Type input here, e.g.  25'
-                  }
-                  rows={2}
-                />
-                <div className="batch-send-row">
-                  <button
-                    type="button"
-                    className="btn btn-run btn-live-send"
-                    onClick={runCode}
-                    disabled={isRunning}
-                  >
-                    Enter ↵
-                  </button>
-                </div>
+                <form
+                  className="batch-stdin-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!isRunning) runCode();
+                  }}
+                >
+                  <textarea
+                    className="input-area terminal-input"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (!isRunning) runCode();
+                      }
+                    }}
+                    enterKeyHint="go"
+                    placeholder={
+                      isProblem
+                        ? 'This problem provides input automatically. You can still edit it.'
+                        : 'Type input here, e.g.  25'
+                    }
+                    rows={2}
+                  />
+                  <div className="batch-send-row">
+                    <button
+                      type="submit"
+                      className="btn btn-run btn-live-send"
+                      disabled={isRunning}
+                    >
+                      Enter ↵
+                    </button>
+                  </div>
+                </form>
               </div>
             )}
           </section>
