@@ -216,7 +216,8 @@ export default function App() {
     if (!INTERACTIVE_OK) {
       browserCompileAndRun({ code, language, input })
         .then((result) => {
-          setOutput(result.output);
+          const echoes = input.trim() ? `> ${input.trim()}\n` : '';
+          setOutput(echoes + result.output);
           setStatus('success');
           setLastRunInfo({ ok: true, at: new Date() });
         })
