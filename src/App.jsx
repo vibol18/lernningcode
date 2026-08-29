@@ -7,6 +7,7 @@ import { toPng } from 'html-to-image';
 import {
   browserCompileAndRun,
   browserCheckSolution,
+  preloadCompiler,
 } from './lib/browserCompiler.js';
 import { SAMPLES } from './lib/samples.js';
 import { PROBLEMS } from './lib/problems.js';
@@ -84,6 +85,11 @@ export default function App() {
   const [clipNotice, setClipNotice] = useState(null);
 
   const editorRef = useRef(null);
+
+  // ---- Preload compiler in the background so first Run is fast ----
+  useEffect(() => {
+    preloadCompiler();
+  }, []);
 
   // ---- Theme + font size side effects ----
   useEffect(() => {

@@ -64,16 +64,30 @@ function normalizeOutput(str) {
 }
 
 /**
+ * Starts downloading the in-browser compiler in the background so the first
+ * compile is fast (the ~90 MB set is fetched while the page loads instead of
+ * when the user first presses Run).
+ */
+export function preloadCompiler() {
+  getCompilerModule().catch(() => {});
+  getWasi().catch(() => {});
+}
+
+async function getModules() {
+  return Promise.all([
+    getCompilerModule(),
+    getWasi(),
+  ]);
+}
+
+/**
  * Compiles and runs `code` entirely in the browser.
  * Resolves with `{ success, output }` on success.
  * Throws `{ message, stage, output }` on compile or runtime failure.
  * Throws a global Error if the compiler itself could not be loaded.
  */
 export async function browserCompileAndRun({ code, language, input }) {
-  const [{ compile }, { WASI, File, OpenFile, ConsoleStdout }] = await Promise.all([
-    getCompilerModule(),
-    getWasi(),
-  ]);
+  const [{ compile }, { WASI, File, OpenFile, ConsoleStdout }] = await getModules();
 
   const fileName = langFile(language);
   const flags = langFlags(language);
