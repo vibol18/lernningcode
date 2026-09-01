@@ -23,7 +23,7 @@ const WASI_CDN = 'https://cdn.jsdelivr.net/npm/@bjorn3/browser_wasi_shim@0.4.2/d
 
 const SAB_STATE_EMPTY = 0;
 const SAB_STATE_READY = 1;
-const SAB_DATA_BYTES = 64 * 1024;
+const SAB_DATA_BYTES = 256 * 1024;
 
 /** True when the page is served with COOP/COEP headers so that
  * SharedArrayBuffer + Atomics (interactive console input) are available. */
@@ -61,10 +61,22 @@ function langFile(language) {
   return language === 'cpp' ? 'main.cpp' : 'main.c';
 }
 
-function langFlags(language) {
-  return language === 'cpp'
-    ? ['-std=c++17', '-O0', '-Wall']
-    : ['-x', 'c', '-O0', '-Wall'];
+// Supported C++ standard editions. Only advertise what browsercc actually
+// accepts (clang++). C code is always compiled as C99+-ish via `-x c` (the
+// sysroot ships POSIX headers); exposing per-C standard flags adds no value.
+export const CPP_STANDARDS = ['c++11', 'c++14', 'c++17', 'c++20', 'c++23'];
+
+export function langFlags(language, standard) {
+  if (language === 'cpp') {
+    std: {
+      if (standard && CPP_STANDARDS.includes(standard)) {
+        // browsercc bundles a recent clang; c++23 is accepted with a warning.
+        return ['-std=' + standard, '-O0', '-Wall'];
+      }
+    }
+    return ['-std=c++17', '-O0', '-Wall'];
+  }
+  return ['-x', 'c', '-O0', '-Wall'];
 }
 
 function normalizeOutput(str) {
@@ -75,6 +87,31 @@ function normalizeOutput(str) {
     .join('\n')
     .replace(/\n+$/g, '')
     .trim();
+}
+
+/**
+ * Provide a student-friendly explanation for a failed run without hiding the
+ * original compiler/runtime output. Keyed off the exit code and known stderr
+ * markers; anything unrecognized falls back to a generic message.
+ */
+export function classifyRuntimeError(exitCode, stderrText) {
+  const s = (stderrText || '').toLowerCase();
+  if (exitCode === -1 || s.indexOf('segmentation fault') !== -1 || /stack overflow/.test(s)) {
+    return 'Segmentation fault (the program tried to access memory it does not own).';
+  }
+  if (s.indexOf('abort') !== -1 || /terminate called/.test(s)) {
+    return 'The program aborted (an exception such as std::bad_alloc, std::out_of_range, or an unhandled throw).';
+  }
+  if (s.indexOf('out of memory') !== -1 || /bad_alloc/.test(s)) {
+    return 'The program ran out of memory (too much allocation without freeing).';
+  }
+  if (s.indexOf('assert') !== -1) {
+    return 'The program hit a failed assert() — a runtime check was false.';
+  }
+  if (exitCode > 0) {
+    return `The program exited with a non-zero code (${exitCode}).`;
+  }
+  return 'The program crashed at runtime.';
 }
 
 /**
@@ -100,15 +137,18 @@ async function getModules() {
  * Throws `{ message, stage, output }` on compile or runtime failure.
  * Throws a global Error if the compiler itself could not be loaded.
  */
-export async function browserCompileAndRun({ code, language, input }) {
+export async function browserCompileAndRun({ code, language, input, standard, extraFiles }) {
   const [{ compile }, { WASI, File, OpenFile, ConsoleStdout }] = await getModules();
 
   const fileName = langFile(language);
-  const flags = langFlags(language);
+  const flags = langFlags(language, standard);
 
   let result;
   try {
-    result = await compile({ source: code, fileName, flags });
+    // extraFiles lets a project with multiple .cpp/.h files compile together:
+    // browsercc writes each to the in-memory filesystem and passes the active
+    // source (plus `-I.` implicitly) so includes resolve across files.
+    result = await compile({ source: code, fileName, flags, extraFiles });
   } catch (err) {
     throw { message: (err && err.message) || 'The in-browser compiler crashed.', stage: 'unknown' };
   }
@@ -164,8 +204,8 @@ export async function browserCompileAndRun({ code, language, input }) {
  * normalization as the server). Resolves with `{ passed, output, expected }`.
  * Throws like browserCompileAndRun on failures.
  */
-export async function browserCheckSolution({ code, language, input, expected }) {
-  const result = await browserCompileAndRun({ code, language, input });
+export async function browserCheckSolution({ code, language, input, expected, standard, extraFiles }) {
+  const result = await browserCompileAndRun({ code, language, input, standard, extraFiles });
   return {
     passed: normalizeOutput(result.output) === normalizeOutput(expected),
     output: result.output,
@@ -184,7 +224,7 @@ export async function browserCheckSolution({ code, language, input, expected }) 
  * for a line), onDone(exitCode), onError({stage,message,output}).
  * `sendInput` returns true if it was handed straight to the program.
  */
-export function startInteractiveRun({ code, language, onStdout, onStderr, onNeedInput, onDone, onError }) {
+export function startInteractiveRun({ code, language, standard, extraFiles, onStdout, onStderr, onNeedInput, onDone, onError }) {
   const sab = new SharedArrayBuffer(8 + SAB_DATA_BYTES);
   const state = new Int32Array(sab);
   const len = new Int32Array(sab, 4);
@@ -206,8 +246,18 @@ export function startInteractiveRun({ code, language, onStdout, onStderr, onNeed
     const bytes = new TextEncoder().encode(text).slice(0, data.byteLength);
     data.set(bytes, 0);
     Atomics.store(len, 0, bytes.byteLength);
+    // Ordering matters: publish the new state, then wake the worker with a
+    // notification. We also post a redundant `wake` message because some
+    // WebKit builds can miss an Atomics.notify issued while the worker is
+    // blocked in Atomics.wait — the worker's timeout-based wait re-checks the
+    // SharedArrayBuffer, so input still arrives reliably.
     Atomics.store(state, 0, SAB_STATE_READY);
     Atomics.notify(state, 0);
+    try {
+      worker.postMessage({ type: 'wake' });
+    } catch {
+      /* worker may be gone */
+    }
   }
 
   // Push one queued piece of input into the SAB if the worker is idle there.
@@ -225,7 +275,9 @@ export function startInteractiveRun({ code, language, onStdout, onStderr, onNeed
 
   function sendInput(text) {
     if (finished) return false;
-    if (typeof text === 'string' && text !== '') pending.push(text);
+    // Always keep every submitted line, including an empty string: a lone
+    // newline is a valid keystroke for getchar()/scanf("%c")/"press Enter".
+    if (typeof text === 'string') pending.push(text);
     return flushOne();
   }
 
@@ -245,7 +297,7 @@ export function startInteractiveRun({ code, language, onStdout, onStderr, onNeed
       case 'done':
         finish();
         worker.terminate();
-        onDone && onDone(m.exitCode);
+        onDone && onDone(m.exitCode, m.elapsedMs);
         break;
       case 'compile-error':
         finish();
@@ -285,7 +337,7 @@ export function startInteractiveRun({ code, language, onStdout, onStderr, onNeed
     type: 'setup',
     sab,
   });
-  worker.postMessage({ type: 'run', code, language });
+  worker.postMessage({ type: 'run', code, language, standard, extraFiles });
 
   return {
     sendInput,

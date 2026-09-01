@@ -10,7 +10,7 @@ export function NetworkErrorBanner({ message }) {
   );
 }
 
-export function CompileErrorBanner({ error, sourceLines }) {
+export function CompileErrorBanner({ error, sourceLines, onJumpToError }) {
   const diags = useMemo(
     () => (error ? parseCompilerOutput(error.output, sourceLines) : null),
     [error, sourceLines]
@@ -35,10 +35,10 @@ export function CompileErrorBanner({ error, sourceLines }) {
       {error.stage !== 'runtime' && diags && (diags.errors.length > 0 || diags.warnings.length > 0) && (
         <div className="diag-list">
           {diags.errors.map((d, i) => (
-            <DiagnosticRow key={`e-${i}`} d={d} />
+            <DiagnosticRow key={`e-${i}`} d={d} onJump={onJumpToError} />
           ))}
           {diags.warnings.map((d, i) => (
-            <DiagnosticRow key={`w-${i}`} d={d} />
+            <DiagnosticRow key={`w-${i}`} d={d} onJump={onJumpToError} />
           ))}
         </div>
       )}
@@ -46,14 +46,17 @@ export function CompileErrorBanner({ error, sourceLines }) {
   );
 }
 
-function DiagnosticRow({ d }) {
+function DiagnosticRow({ d, onJump }) {
   const [open, setOpen] = useState(false);
   const isError = d.severity === 'error';
   return (
     <div className={`diag-row ${isError ? 'diag-error' : 'diag-warning'}`}>
       <button
         className="diag-toggle"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (onJump) onJump(d.line);
+          else setOpen((o) => !o);
+        }}
         aria-expanded={open}
       >
         <span className={`badge ${isError ? 'badge-error' : 'badge-warning'}`}>

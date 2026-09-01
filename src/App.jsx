@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { cpp } from '@codemirror/lang-cpp';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -10,6 +10,8 @@ import {
   preloadCompiler,
   startInteractiveRun,
   INTERACTIVE_OK,
+  classifyRuntimeError,
+  CPP_STANDARDS,
 } from './lib/browserCompiler.js';
 import { SAMPLES } from './lib/samples.js';
 import { PROBLEMS } from './lib/problems.js';
@@ -17,49 +19,110 @@ import { LESSONS } from './lib/lessons.js';
 import { QUIZZES } from './lib/quizzes.js';
 import { formatCode } from './lib/formatCode.js';
 import { cppAutocomplete } from './lib/cppAutocomplete.js';
-import {
-  loadPrograms,
-  savePrograms,
-  loadTheme,
-  saveTheme,
-  loadFontSize,
-  saveFontSize,
-} from './lib/storage.js';
-import {
-  OutputPanel,
-  NetworkErrorBanner,
-  CompileErrorBanner,
-  CheckResultBanner,
-} from './components/OutputPanel.jsx';
-import {
-  LessonsPanel,
-  ProblemsPanel,
-  QuizPanel,
-} from './components/LearnPanels.jsx';
+import { loadSettings, saveSettings } from './lib/settings.js';
+import { NetworkErrorBanner, CheckResultBanner } from './components/OutputPanel.jsx';
+import { LessonsPanel, ProblemsPanel, QuizPanel } from './components/LearnPanels.jsx';
 import CodeToImage from './components/CodeToImage.jsx';
+import Terminal from './components/Terminal.jsx';
+import FileExplorer from './components/FileExplorer.jsx';
+import SettingsPanel from './components/SettingsPanel.jsx';
 
-const DRAFT_KEY = 'ccpp.draft.v1';
+// CodeMirror search/language/view extensions for the upgraded editor.
+import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+import {
+  foldGutter,
+  foldKeymap,
+  indentUnit,
+  bracketMatching,
+} from '@codemirror/language';
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { EditorView, keymap, lineNumbers as cmLineNumbers } from '@codemirror/view';
 
-function readDraft() {
+const DRAFT_KEY = 'ccpp.project.v1';
+const PROGRAMS_KEY = 'ccpp.programs.v1';
+
+function fileExt(language) {
+  return language === 'c' ? '.c' : '.cpp';
+}
+
+function defaultProject(settings) {
+  const code = SAMPLES.cpp.hello.code;
+  return {
+    name: 'My Project',
+    active: `main${fileExt(settings.language)}`,
+    files: [
+      {
+        name: `main${fileExt(settings.language)}`,
+        language: settings.language,
+        code,
+        saved: true,
+      },
+    ],
+  };
+}
+
+function readProject() {
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && Array.isArray(p.files) && p.files.length) return p;
+    }
   } catch {
-    return null;
+    /* ignore */
+  }
+  // Fallback: migrate old single-program + draft stores into a project.
+  try {
+    const draft = JSON.parse(localStorage.getItem('ccpp.draft.v1') || 'null');
+    const programs = JSON.parse(localStorage.getItem(PROGRAMS_KEY) || '[]');
+    const s = loadSettings();
+    const active = draft && typeof draft.code === 'string' && draft.code.trim()
+      ? draft
+      : { code: SAMPLES.cpp.hello.code, language: s.language };
+    return defaultProjectWithCode(active);
+  } catch {
+    const s = loadSettings();
+    return defaultProject(s);
   }
 }
 
-function writeDraft(d) {
+function defaultProjectWithCode(active) {
+  return {
+    name: 'My Project',
+    active: `main${fileExt(active.language || 'cpp')}`,
+    files: [
+      {
+        name: `main${fileExt(active.language || 'cpp')}`,
+        language: active.language || 'cpp',
+        code: active.code || SAMPLES.cpp.hello.code,
+        saved: true,
+      },
+    ],
+  };
+}
+
+function writeProject(project) {
   try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(project));
   } catch {
     /* ignore */
   }
 }
 
 export default function App() {
-  const [language, setLanguage] = useState('cpp');
-  const [code, setCode] = useState(SAMPLES.cpp.hello.code);
+  const [settings, setSettings] = useState(() => {
+    const s = loadSettings();
+    // Only keep language/standard from settings at first run; the project's
+    // active file carries the real language going forward.
+    s.language = s.language || 'cpp';
+    return s;
+  });
+
+  const [project, setProject] = useState(() => readProject());
+  const activeFile = project.files.find((f) => f.name === project.active) || project.files[0];
+  const code = activeFile ? activeFile.code : '';
+  const language = activeFile ? activeFile.language : settings.language;
+
   const [output, setOutput] = useState('');
   const [status, setStatus] = useState('idle');
   const [runError, setRunError] = useState(null);
@@ -72,48 +135,54 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 800px)').matches : false
   );
-  const [consoleOpen, setConsoleOpen] = useState(false);
-  const [consoleHeight, setConsoleHeight] = useState(300);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
-  // Interactive console input (Worker + SharedArrayBuffer)
+  const [showConsole, setShowConsole] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 800 : false
+  );
+  const [showExplorer, setShowExplorer] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth > 900 : false
+  );
+  const [terminalTab, setTerminalTab] = useState('console');
+  const [terminalHeight, setTerminalHeight] = useState(260);
+
   const [awaitingInput, setAwaitingInput] = useState(false);
   const [liveInput, setLiveInput] = useState('');
   const [consoleLog, setConsoleLog] = useState([]);
+  const [runInfo, setRunInfo] = useState(null);
   const runRef = useRef(null);
-  const liveInputRef = useRef(null);
 
-  // Learn + settings
   const [learnTab, setLearnTab] = useState('none');
   const [activeProblem, setActiveProblem] = useState(null);
-  const [theme, setTheme] = useState(() => loadTheme() || 'dark');
-  const [fontSize, setFontSize] = useState(() => loadFontSize() || 15);
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
 
-  // Download / files
-  const [downloadOpen, setDownloadOpen] = useState(false);
   const [downloadName, setDownloadName] = useState('my_program');
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
-  const [savedPrograms, setSavedPrograms] = useState(() => loadPrograms());
+  const [savedPrograms, setSavedPrograms] = useState([]);
   const [clipNotice, setClipNotice] = useState(null);
   const [showCodeImage, setShowCodeImage] = useState(false);
   const [imgCode, setImgCode] = useState('');
 
   const editorRef = useRef(null);
+  const editorViewRef = useRef(null);
 
-  // ---- Preload compiler in the background so first Run is fast ----
+  // ---- Preload compiler ----
   useEffect(() => {
     preloadCompiler();
   }, []);
 
-  // ---- Theme + font size side effects ----
+  // ---- Persist settings ----
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    saveTheme(theme);
-  }, [theme]);
+    document.documentElement.setAttribute('data-theme', settings.theme);
+    saveSettings(settings);
+  }, [settings]);
 
+  // ---- Persist project (debounced) ----
   useEffect(() => {
-    saveFontSize(fontSize);
-  }, [fontSize]);
+    const t = setTimeout(() => writeProject(project), 400);
+    return () => clearTimeout(t);
+  }, [project]);
 
   // ---- Mobile detection ----
   useEffect(() => {
@@ -123,20 +192,15 @@ export default function App() {
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  // ---- Focus the console input whenever the program asks for input ----
-  useEffect(() => {
-    if (awaitingInput && status === 'running') liveInputRef.current && liveInputRef.current.focus();
-  }, [awaitingInput, status]);
-
-  // ---- iOS: keep the console input visible above the on-screen keyboard ----
+  // ---- iOS: keep the input visible above the on-screen keyboard ----
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
     const keepInputVisible = () => {
-      if (window.innerWidth > 800) return;
+      if (window.innerWidth > 800 || !showConsole) return;
       const kbOpen = vv.height < window.innerHeight - 80;
-      const el = liveInputRef.current;
-      if (kbOpen && consoleOpen && el) {
+      const el = document.querySelector('.live-input');
+      if (kbOpen && el) {
         requestAnimationFrame(() => el.scrollIntoView({ block: 'nearest', behavior: 'auto' }));
       }
     };
@@ -146,40 +210,20 @@ export default function App() {
       vv.removeEventListener('resize', keepInputVisible);
       vv.removeEventListener('scroll', keepInputVisible);
     };
-  }, [consoleOpen]);
+  }, [showConsole]);
 
-  // ---- Outside-click close for dropdowns ----
+  // ---- Outside-click close for share menu ----
   useEffect(() => {
-    if (!downloadOpen && !fileMenuOpen) return;
+    if (!shareOpen && !fileMenuOpen) return;
     const onOutside = () => {
-      setDownloadOpen(false);
+      setShareOpen(false);
       setFileMenuOpen(false);
     };
     window.addEventListener('click', onOutside);
     return () => window.removeEventListener('click', onOutside);
-  }, [downloadOpen, fileMenuOpen]);
+  }, [shareOpen, fileMenuOpen]);
 
-  // ---- Autosave draft (debounced) ----
-  useEffect(() => {
-    const t = setTimeout(() => {
-      writeDraft({ code, language, input, name: downloadName });
-    }, 600);
-    return () => clearTimeout(t);
-  }, [code, language, input, downloadName]);
-
-  // ---- Restore draft on mount (runs once) ----
-  useEffect(() => {
-    const draft = readDraft();
-    if (draft && draft.code) {
-      setCode(draft.code.trim() ? draft.code : SAMPLES.cpp.hello.code);
-      if (draft.language) setLanguage(draft.language);
-      if (typeof draft.input === 'string') setInput(draft.input);
-      if (draft.name) setDownloadName(draft.name);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ---- Load shared code from URL hash (takes priority over draft) ----
+  // ---- Load shared code from URL hash ----
   useEffect(() => {
     if (!window.location.hash) return;
     const m = window.location.hash.match(/[#&]code=([^&]+)/);
@@ -187,44 +231,178 @@ export default function App() {
     try {
       const shared = decodeURIComponent(escape(atob(m[1])));
       if (shared && shared.trim()) {
-        setCode(shared);
+        setProject((p) => ({ ...p, active: activeFile ? activeFile.name : p.active }));
+        setProject((p) => ({
+          ...p,
+          files: p.files.map((f) => (f.name === p.active ? { ...f, code: shared } : f)),
+        }));
         setRunError(null);
         setCheckResult(null);
         setOutput('');
         setStatus('idle');
-        writeDraft({ code: shared, language, input, name: downloadName });
       }
     } catch {
-      /* invalid share code — ignore */
+      /* invalid share code */
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const isRunning = status === 'running';
 
-  // ---- Apply sample / problem / lesson ----
-  const applyCode = useCallback(
-    (nextCode, lang) => {
-      if (lang) setLanguage(lang);
-      setCode(nextCode);
+  // ---- CodeMirror extensions (rebuilt when settings change) ----
+  const cmExtensions = useMemo(() => {
+    const exts = [
+      cpp(),
+      history(),
+      foldGutter(),
+      bracketMatching(),
+      indentUnit.of(' '.repeat(settings.tabSize)),
+      highlightSelectionMatches(),
+    ];
+    if (settings.lineNumbers) exts.push(cmLineNumbers());
+    if (settings.autocomplete) exts.push(cppAutocomplete());
+    if (settings.wordWrap) exts.push(EditorView.lineWrapping);
+    exts.push(
+      keymap.of([
+        ...defaultKeymap,
+        ...searchKeymap,
+        ...foldKeymap,
+        ...historyKeymap,
+        indentWithTab,
+      ])
+    );
+    return exts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, language]);
+
+  // We need access to the editor view for goto-line; store it via onUpdate.
+  const handleEditorMount = useCallback((view) => {
+    editorViewRef.current = view;
+  }, []);
+
+  // ---- Project helpers ----
+  const setActiveFileCode = useCallback((nextCode) => {
+    setProject((p) => ({
+      ...p,
+      files: p.files.map((f) => (f.name === p.active ? { ...f, code: nextCode, saved: false } : f)),
+    }));
+  }, []);
+
+  const selectFile = useCallback((name) => {
+    setProject((p) => ({ ...p, active: name }));
+    setRunError(null);
+    setCheckResult(null);
+    setOutput('');
+    setStatus('idle');
+    setActiveProblem(null);
+  }, []);
+
+  const createFile = useCallback((name) => {
+    const clean = name.endsWith('.cpp') || name.endsWith('.c') || name.endsWith('.h') || name.endsWith('.hpp')
+      ? name
+      : name.replace(/\.[^.]+$/, '') + (name.endsWith('.c') ? '.c' : '.cpp');
+    setProject((p) => {
+      if (p.files.some((f) => f.name === clean)) return p;
+      const isC = clean.endsWith('.c');
+      return {
+        ...p,
+        active: clean,
+        files: [
+          ...p.files,
+          { name: clean, language: isC ? 'c' : 'cpp', code: isC
+            ? '#include <stdio.h>\n\nint main() {\n    printf("Hello, World!\\n");\n    return 0;\n}\n'
+            : '#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}\n', saved: false },
+        ],
+      };
+    });
+    setRunError(null);
+    setCheckResult(null);
+    setOutput('');
+    setStatus('idle');
+  }, []);
+
+  const renameFile = useCallback((oldName, newName) => {
+    if (!newName || oldName === newName) return;
+    setProject((p) => {
+      if (p.files.some((f) => f.name === newName)) return p;
+      const isC = newName.endsWith('.c');
+      return {
+        ...p,
+        active: newName,
+        files: p.files.map((f) =>
+          f.name === oldName
+            ? { ...f, name: newName, language: isC ? 'c' : f.language }
+            : f
+        ),
+      };
+    });
+  }, []);
+
+  const deleteFile = useCallback((name) => {
+    setProject((p) => {
+      if (p.files.length <= 1) return p;
+      const remaining = p.files.filter((f) => f.name !== name);
+      const active = p.active === name ? remaining[0].name : p.active;
+      return { ...p, active, files: remaining };
+    });
+    setRunError(null);
+    setCheckResult(null);
+    setOutput('');
+    setStatus('idle');
+  }, []);
+
+  const downloadFile = useCallback((name) => {
+    const f = project.files.find((x) => x.name === name);
+    if (!f) return;
+    const blob = new Blob([f.code], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = f.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [project]);
+
+  const uploadFile = useCallback((file) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const name = file.name;
+      const isC = name.endsWith('.c');
+      setProject((p) => {
+        if (p.files.some((f) => f.name === name)) return p;
+        return {
+          ...p,
+          active: name,
+          files: [...p.files, { name, language: isC ? 'c' : 'cpp', code: String(reader.result || ''), saved: false }],
+        };
+      });
+      setStatus('idle');
       setRunError(null);
-      setNetworkError(null);
       setCheckResult(null);
       setOutput('');
-      setStatus('idle');
-    },
-    []
-  );
+    };
+    reader.readAsText(file);
+  }, []);
 
-  const selectLanguage = (lang) => {
-    setLanguage(lang);
-    const samples = SAMPLES[lang];
-    const first = Object.values(samples)[0];
-    applyCode(first.code, lang);
-  };
+  // ---- Saved programs (localStorage list view, kept for compatibility) ----
+  useEffect(() => {
+    try {
+      const programs = JSON.parse(localStorage.getItem(PROGRAMS_KEY) || '[]');
+      setSavedPrograms(Array.isArray(programs) ? programs : []);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // ---- Run ----
-  const runCode = useCallback(() => {
+  const openConsole = useCallback(() => {
+    setShowConsole(true);
+    setTerminalTab('console');
+  }, []);
+
+  const handleRun = useCallback(() => {
     setRunError(null);
     setNetworkError(null);
     setCheckResult(null);
@@ -233,16 +411,25 @@ export default function App() {
     setConsoleLog([]);
     setAwaitingInput(false);
     setLiveInput('');
-    openConsole(300);
+    setRunInfo(null);
+    openConsole();
+
+    const standard = settings.standard || 'c++17';
+    const extraFiles = {};
+    project.files.forEach((f) => {
+      if (f.name !== project.active) extraFiles[f.name] = f.code;
+    });
 
     // Fallback (no cross-origin isolation): whole stdin supplied up front.
     if (!INTERACTIVE_OK) {
-      browserCompileAndRun({ code, language, input })
+      browserCompileAndRun({ code, language, input, standard, extraFiles })
         .then((result) => {
           const echoes = input.trim() ? `> ${input.trim()}\n` : '';
           setOutput(echoes + result.output);
+          setConsoleLog([{ type: 'out', text: echoes + result.output }]);
           setStatus('success');
           setLastRunInfo({ ok: true, at: new Date() });
+          setRunInfo({ exitCode: 0, elapsedMs: 0 });
         })
         .catch((err) => {
           const stage = err && err.stage;
@@ -252,6 +439,7 @@ export default function App() {
             setRunError({ message, output: out, stage: stage || 'compile' });
             setOutput(out);
             setStatus('failed');
+            setRunInfo({ exitCode: 1, elapsedMs: 0 });
           } else {
             setNetworkError(message);
             setStatus('idle');
@@ -260,25 +448,26 @@ export default function App() {
       return;
     }
 
-    // Interactive: program runs in a Worker; type input into the Console
-    // whenever the program asks for it.
     const handle = startInteractiveRun({
       code,
       language,
+      standard,
+      extraFiles,
       onStdout: (t) => setConsoleLog((p) => [...p, { type: 'out', text: t }]),
       onStderr: (t) => setConsoleLog((p) => [...p, { type: 'out', text: t }]),
       onNeedInput: () => setAwaitingInput(true),
-      onDone: (exitCode) => {
+      onDone: (exitCode, elapsedMs) => {
         runRef.current = null;
         setAwaitingInput(false);
         setLiveInput('');
+        setRunInfo({ exitCode, elapsedMs: elapsedMs || 0 });
         setLastRunInfo({ ok: exitCode === 0, at: new Date() });
         if (exitCode === 0) {
           setStatus('success');
         } else {
           setStatus('failed');
           setRunError({
-            message: `Your program exited with code ${exitCode}.`,
+            message: `Your program exited with code ${exitCode}. ${classifyRuntimeError(exitCode, '')}`,
             stage: 'runtime',
             output: '',
           });
@@ -288,6 +477,7 @@ export default function App() {
         runRef.current = null;
         setAwaitingInput(false);
         setLiveInput('');
+        setRunInfo({ exitCode: 1, elapsedMs: 0 });
         if (err && err.stage) {
           setRunError({ message: err.message, output: err.output || '', stage: err.stage });
           setOutput(err.output || '');
@@ -299,35 +489,27 @@ export default function App() {
       },
     });
     runRef.current = handle;
-  }, [code, language, input, isMobile]);
+  }, [code, language, input, settings.standard, project, isMobile]);
 
   const stopRun = useCallback(() => {
     if (runRef.current) runRef.current.terminate();
     runRef.current = null;
     setAwaitingInput(false);
     setLiveInput('');
-    setOutput((p) => p + '\n[stopped]\n');
+    setConsoleLog((p) => [...p, { type: 'out', text: '[stopped]\n' }]);
     setStatus('idle');
   }, []);
 
-  const submitLiveInput = useCallback(() => {
-    const text = liveInput;
-    setLiveInput('');
-    // Always send a line, even an empty one: pressing Enter with nothing typed
-    // is a valid keystroke for programs that read a char or a blank line
-    // (getchar(), scanf("%c"), "press Enter to continue", etc.).
-    if (runRef.current) runRef.current.sendInput(text + '\n');
-    setConsoleLog((p) => [...p, { type: 'in', text: text + '\n' }]);
-    setAwaitingInput(false);
-    if (liveInputRef.current) {
-      requestAnimationFrame(() => liveInputRef.current && liveInputRef.current.focus());
-    }
-  }, [liveInput]);
-
-  const openConsole = useCallback((height) => {
-    setConsoleOpen(true);
-    if (height) setConsoleHeight(height);
-  }, []);
+  const submitLiveInput = useCallback(
+    (text) => {
+      const t = text;
+      setLiveInput('');
+      if (runRef.current) runRef.current.sendInput(t + '\n');
+      setConsoleLog((p) => [...p, { type: 'in', text: t + '\n' }]);
+      setAwaitingInput(false);
+    },
+    []
+  );
 
   // ---- Check solution (problems) ----
   const runCheck = useCallback(async () => {
@@ -337,11 +519,18 @@ export default function App() {
     setNetworkError(null);
     setCheckResult(null);
     setChecking(true);
-    openConsole(340);
+    openConsole();
     try {
-      const res = await browserCheckSolution({ code, language, input: p.input, expected: p.expected });
+      const res = await browserCheckSolution({
+        code,
+        language,
+        input: p.input,
+        expected: p.expected,
+        standard: settings.standard || 'c++17',
+      });
       setStatus('success');
       setOutput(res.output);
+      setConsoleLog([{ type: 'out', text: res.output }]);
       setCheckResult({ passed: res.passed, output: res.output, expected: res.expected });
     } catch (err) {
       const stage = err && err.stage;
@@ -361,41 +550,100 @@ export default function App() {
       setChecking(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProblem, code, language, isMobile]);
+  }, [activeProblem, code, language, settings.standard]);
 
-  // ---- Select problem / lesson ----
+  // ---- Apply lesson/problem/sample ----
+  const applyCode = useCallback(
+    (nextCode, lang) => {
+      const stdLang = lang || language;
+      setProject((p) => ({
+        ...p,
+        active: `main${fileExt(stdLang)}`,
+        files: [
+          { name: `main${fileExt(stdLang)}`, language: stdLang, code: nextCode, saved: false },
+          ...p.files.filter((f) => f.name !== `main${fileExt(stdLang)}`),
+        ],
+      }));
+      setRunError(null);
+      setNetworkError(null);
+      setCheckResult(null);
+      setOutput('');
+      setStatus('idle');
+      setActiveProblem(null);
+    },
+    [language]
+  );
+
   const selectProblem = useCallback(
     (p) => {
       setActiveProblem(p ? p.id : null);
       if (p) {
-        setLanguage(p.language);
-        setCode(p.starterCode || p.code || '');
+        applyCode(p.starterCode || p.code || '', p.language);
         setInput(p.input || '');
-        setRunError(null);
-        setCheckResult(null);
-        setOutput('');
-        setStatus('idle');
         setDownloadName(p.title.toLowerCase().replace(/\s+/g, '_'));
       }
     },
-    []
+    [applyCode]
   );
 
   const loadLesson = useCallback(
     (lesson) => {
       setLearnTab('none');
-      setLanguage(lesson.language);
-      setCode(lesson.code);
-      setRunError(null);
-      setCheckResult(null);
-      setOutput('');
-      setStatus('idle');
+      applyCode(lesson.code, lesson.language);
+    },
+    [applyCode]
+  );
+
+  // ---- Save current program (compat list) ----
+  const saveCurrentProgram = useCallback(() => {
+    const rec = { name: downloadName.trim() || 'my_program', code, language, updatedAt: Date.now() };
+    setSavedPrograms((prev) => {
+      const updated = prev.filter((s) => s.name !== rec.name);
+      updated.unshift(rec);
+      try {
+        localStorage.setItem(PROGRAMS_KEY, JSON.stringify(updated));
+      } catch {
+        /* ignore */
+      }
+      return updated;
+    });
+    // Mark the active file saved in the project too.
+    setProject((p) => ({
+      ...p,
+      files: p.files.map((f) => (f.name === p.active ? { ...f, saved: true } : f)),
+    }));
+    setClipNotice(`Saved "${rec.name}"`);
+    setTimeout(() => setClipNotice(null), 2000);
+  }, [downloadName, code, language]);
+
+  const handleSaveCurrent = saveCurrentProgram;
+
+  const openProgram = useCallback(
+    (s) => {
+      applyCode(s.code, s.language || 'cpp');
+      setDownloadName(s.name);
+      setFileMenuOpen(false);
+    },
+    [applyCode]
+  );
+
+  const deleteProgram = useCallback(
+    (name) => {
+      setSavedPrograms((prev) => {
+        const updated = prev.filter((s) => s.name !== name);
+        try {
+          localStorage.setItem(PROGRAMS_KEY, JSON.stringify(updated));
+        } catch {
+          /* ignore */
+        }
+        return updated;
+      });
     },
     []
   );
 
-  // ---- Download ----
-  const ext = language === 'cpp' ? 'cpp' : 'c';
+  // ---- Download (single current file) ----
+  const ext = fileExt(language).slice(1);
   const downloadCode = useCallback(() => {
     const name = (downloadName.trim() || 'my_program').replace(/[^\w.-]/g, '_');
     const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
@@ -415,7 +663,7 @@ export default function App() {
     try {
       const dataUrl = await toPng(node, {
         pixelRatio: 2,
-        backgroundColor: theme === 'light' ? '#ffffff' : '#0f1117',
+        backgroundColor: settings.theme === 'light' ? '#ffffff' : '#0f1117',
         cacheBust: true,
       });
       const a = document.createElement('a');
@@ -428,7 +676,7 @@ export default function App() {
       setNetworkError('Could not capture the picture of your code.');
       console.error(e);
     }
-  }, [language, theme]);
+  }, [language, settings.theme]);
 
   const clipboardFallback = (text) => {
     const ta = document.createElement('textarea');
@@ -465,62 +713,49 @@ export default function App() {
     }
     setClipNotice('Share link copied to clipboard');
     setTimeout(() => setClipNotice(null), 2000);
+    setShareOpen(false);
   }, [code]);
 
-  // ---- File manager ----
-  const saveCurrentProgram = useCallback(() => {
-    const updated = [...savedPrograms];
-    const idx = updated.findIndex((s) => s.name === downloadName);
-    const rec = {
-      name: downloadName.trim() || 'my_program',
-      code,
-      language,
-      updatedAt: Date.now(),
-    };
-    if (idx >= 0) updated[idx] = rec;
-    else updated.unshift(rec);
-    setSavedPrograms(updated);
-    savePrograms(updated);
-  }, [savedPrograms, downloadName, code, language]);
-
-  const deleteProgram = useCallback(
-    (name) => {
-      const updated = savedPrograms.filter((s) => s.name !== name);
-      setSavedPrograms(updated);
-      savePrograms(updated);
-    },
-    [savedPrograms]
-  );
-
-  const openProgram = useCallback(
-    (s) => {
-      setLanguage(s.language || 'cpp');
-      setCode(s.code);
-      setDownloadName(s.name);
-      setRunError(null);
-      setCheckResult(null);
-      setOutput('');
-      setStatus('idle');
-      setFileMenuOpen(false);
-    },
-    []
-  );
-
+  // ---- Keyboard: Ctrl+Enter run (worker path), Ctrl+S save ----
   useEffect(() => {
     const onKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
-        if (!isRunning) runCode();
+        if (!isRunning) handleRun();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleSaveCurrent();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [runCode, isRunning]);
+  }, [handleRun, isRunning, handleSaveCurrent]);
 
   const samples = SAMPLES[language];
-
-  const editorTheme = theme === 'light' ? githubLight : oneDark;
   const isProblem = activeProblem !== null;
+  const editorTheme = settings.theme === 'light' ? githubLight : oneDark;
+  const interactiveOk = INTERACTIVE_OK;
+
+  const jumpToError = useCallback(
+    (line) => {
+      setTerminalTab('console');
+      const view = editorViewRef.current;
+      if (view) {
+        const target = view.state.doc.line(line);
+        view.dispatch({
+          selection: { anchor: target.from },
+          effects: EditorView.scrollIntoView(target.from, { y: 'center' }),
+        });
+        view.focus();
+      }
+    },
+    []
+  );
+
+  const clearConsole = useCallback(() => {
+    setConsoleLog([]);
+    setOutput('');
+  }, []);
 
   if (showCodeImage) {
     return (
@@ -537,232 +772,133 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
+          <button
+            className="icon-btn"
+            title="Toggle explorer"
+            onClick={() => setShowExplorer((v) => !v)}
+          >
+            ☰
+          </button>
           <span className="logo">C++</span>
           <div className="title-wrap">
             <h1>C/C++ Learning Playground</h1>
-            <p className="subtitle">
-              Write, compile &amp; run — lessons, problems &amp; quizzes included
-            </p>
+            <p className="subtitle">A browser-based IDE — lessons, problems &amp; quizzes</p>
           </div>
         </div>
         <div className="header-actions">
-          <div className="settings-group">
-            <div className="font-controls">
-              <button className="fs-btn" onClick={() => setFontSize((f) => Math.max(12, f - 1))} title="Smaller text">−</button>
-              <span className="fs-val">{fontSize}px</span>
-              <button className="fs-btn" onClick={() => setFontSize((f) => Math.min(24, f + 1))} title="Larger text">+</button>
-            </div>
-            <button
-              className="icon-head-btn"
-              onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-              title="Toggle theme"
-            >
-              {theme === 'dark' ? 'Light' : 'Dark'}
-            </button>
-            <span className="hint">Ctrl+Enter to run</span>
-          </div>
+          <span className={`iso-badge ${interactiveOk ? 'ok' : 'warn'}`}>
+            {interactiveOk ? 'Live input' : 'Batch input'}
+          </span>
+          <button className="btn btn-ghost" onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
         </div>
       </header>
 
-      <nav className="learn-row">
-        <button
-          className={`nav-btn ${learnTab === 'lessons' ? 'active' : ''}`}
-          onClick={() => setLearnTab(learnTab === 'lessons' ? 'none' : 'lessons')}
-        >
-          Lessons
-        </button>
-        <button
-          className={`nav-btn ${learnTab === 'problems' ? 'active' : ''}`}
-          onClick={() => setLearnTab(learnTab === 'problems' ? 'none' : 'problems')}
-        >
-          Practice Problems
-        </button>
-        <button
-          className={`nav-btn ${learnTab === 'quizzes' ? 'active' : ''}`}
-          onClick={() => setLearnTab(learnTab === 'quizzes' ? 'none' : 'quizzes')}
-        >
-          Quizzes
-        </button>
+      <div className="learn-row">
+        <button className={`nav-btn ${learnTab === 'lessons' ? 'active' : ''}`} onClick={() => setLearnTab(learnTab === 'lessons' ? 'none' : 'lessons')}>Lessons</button>
+        <button className={`nav-btn ${learnTab === 'problems' ? 'active' : ''}`} onClick={() => setLearnTab(learnTab === 'problems' ? 'none' : 'problems')}>Practice Problems</button>
+        <button className={`nav-btn ${learnTab === 'quizzes' ? 'active' : ''}`} onClick={() => setLearnTab(learnTab === 'quizzes' ? 'none' : 'quizzes')}>Quizzes</button>
         <span className="field-label" style={{ marginLeft: 'auto' }}>
-          {isProblem ? `Problem active — use “Check my solution”` : 'Examples: run to see output'}
+          {isProblem ? 'Problem active — use “Check solution”' : 'Examples: run to see output'}
         </span>
-      </nav>
+      </div>
 
+      <NetworkErrorBanner message={networkError} />
+
+      {/* Toolbar */}
       <div className="toolbar">
         <div className="toolbar-group">
           <label className="field">
             Language
             <select
               value={language}
-              onChange={(e) => selectLanguage(e.target.value)}
+              onChange={(e) => {
+                const lang = e.target.value;
+                setSettings((s) => ({ ...s, language: lang }));
+                setProject((p) => {
+                  const single = p.files.length === 1;
+                  const rename = single || p.active.startsWith('main.');
+                  const newActive = lang === 'c' ? 'main.c' : 'main.cpp';
+                  return {
+                    ...p,
+                    files: p.files.map((f) =>
+                      f.name === p.active && rename
+                        ? { ...f, language: lang, name: newActive }
+                        : f
+                    ),
+                    active: rename ? newActive : p.active,
+                  };
+                });
+                setRunError(null);
+                setCheckResult(null);
+                setOutput('');
+                setStatus('idle');
+              }}
               disabled={isRunning || isProblem}
             >
               <option value="c">C</option>
               <option value="cpp">C++</option>
             </select>
           </label>
+          {language === 'cpp' && (
+            <label className="field">
+              Standard
+              <select
+                value={settings.standard || 'c++17'}
+                onChange={(e) => setSettings((s) => ({ ...s, standard: e.target.value }))}
+                disabled={isRunning}
+              >
+                {CPP_STANDARDS.map((s) => (
+                  <option key={s} value={s}>{s.replace('c++', 'C++')}</option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
 
-        <div className="toolbar-group samples">
-          <span className="field-label">Examples</span>
-          {Object.entries(samples).map(([key, sample]) => (
-            <button
-              key={key}
-              className="chip"
-              disabled={isRunning}
-              onClick={() => applyCode(sample.code)}
-            >
-              {sample.name}
-            </button>
-          ))}
-        </div>
-
-        <div className="toolbar-group">
-          <button
-            className="btn btn-ghost"
-            onClick={() => setCode((c) => formatCode(c))}
-            title="Auto-indent and tidy your code"
-          >
-            ≡ Format
-          </button>
-
-          <button
-            className="btn btn-ghost"
-            onClick={() => openConsole(300)}
-            title="Open the output console"
-          >
-            Console
-          </button>
-
-          <button
-            className="btn btn-ghost"
-            onClick={() => {
-              setImgCode(code);
-              setShowCodeImage(true);
-            }}
-            title="Turn your code into a 4K picture (all languages)"
-          >
-            ◫ Code → Picture
-          </button>
-
+        <div className="toolbar-group live-actions">
           {isProblem ? (
-            <button
-              className="btn btn-run"
-              onClick={runCheck}
-              disabled={isRunning || checking}
-            >
+            <button className="btn btn-run" onClick={runCheck} disabled={isRunning || checking}>
               {checking ? 'Checking…' : 'Check solution'}
             </button>
           ) : (
-            <button className="btn btn-run" onClick={runCode} disabled={isRunning}>
-              {isRunning ? 'Compiling & running…' : '▶ Run code'}
-            </button>
+            <>
+              <button className="btn btn-run" onClick={() => handleRun()} disabled={isRunning}>
+                {isRunning ? 'Running…' : '▶ Run'}
+              </button>
+              <button className="btn btn-stop" onClick={stopRun} disabled={!isRunning}>■ Stop</button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => {
+                  setConsoleLog((p) => [...p, { type: 'out', text: '\n[Debug mode is unavailable in the in-browser compiler]\n' }]);
+                  openConsole();
+                  setStatus('success');
+                }}
+                title="The browser-only compiler cannot run a full GDB debugger"
+              >
+                Debug
+              </button>
+            </>
           )}
+        </div>
+
+        <div className="toolbar-group right-actions">
+          <button className="btn btn-ghost" onClick={() => openConsole()}>Console</button>
+          <button className="btn btn-ghost" onClick={() => { setImgCode(code); setShowCodeImage(true); }}>◫ Picture</button>
 
           <div className="dropdown" onClick={(e) => e.stopPropagation()}>
-            <button
-              className="btn btn-ghost dropdown-toggle"
-              onClick={() => {
-                setDownloadOpen((o) => !o);
-                setFileMenuOpen(false);
-              }}
-              aria-haspopup="true"
-              aria-expanded={downloadOpen}
-            >
-              ⬇ Download <span className="caret">▾</span>
-            </button>
-            {downloadOpen && (
+            <button className="btn btn-ghost dropdown-toggle" onClick={() => { setShareOpen((o) => !o); setFileMenuOpen(false); }}>Share ▾</button>
+            {shareOpen && (
               <div className="dropdown-menu" role="menu">
-                <div className="dropdown-name-row" onClick={(e) => e.stopPropagation()}>
-                  <label>File name</label>
-                  <input
-                    className="name-input"
-                    value={downloadName}
-                    onChange={(e) => setDownloadName(e.target.value)}
-                    placeholder="my_program"
-                  />
-                </div>
-                <button
-                  className="dropdown-item"
-                  role="menuitem"
-                  onClick={() => {
-                    downloadPicture();
-                    setDownloadOpen(false);
-                  }}
-                >
-                  <span className="dropdown-ic">◫</span> Picture (PNG)
-                </button>
-                <button
-                  className="dropdown-item"
-                  role="menuitem"
-                  onClick={() => {
-                    downloadCode();
-                    setDownloadOpen(false);
-                  }}
-                >
-                  <span className="dropdown-ic">≡</span> File (.{ext})
-                </button>
-                <div className="dropdown-divider" />
-                <button
-                  className="dropdown-item"
-                  role="menuitem"
-                  onClick={() => {
-                    copyCode();
-                    setDownloadOpen(false);
-                  }}
-                >
-                  <span className="dropdown-ic">⧉</span> Copy code
-                </button>
-                <button
-                  className="dropdown-item"
-                  role="menuitem"
-                  onClick={() => {
-                    shareCode();
-                    setDownloadOpen(false);
-                  }}
-                >
-                  <span className="dropdown-ic">↗</span> Copy share link
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="dropdown" onClick={(e) => e.stopPropagation()}>
-            <button
-              className="btn btn-ghost dropdown-toggle"
-              onClick={() => {
-                setFileMenuOpen((o) => !o);
-                setDownloadOpen(false);
-              }}
-              aria-expanded={fileMenuOpen}
-            >
-              ⬇ Save <span className="caret">▾</span>
-            </button>
-            {fileMenuOpen && (
-              <div className="dropdown-menu" role="menu">
-                <button className="dropdown-item" role="menuitem" onClick={saveCurrentProgram}>
-                  <span className="dropdown-ic">+</span> Save current
-                </button>
+                <button className="dropdown-item" role="menuitem" onClick={shareCode}><span className="dropdown-ic">↗</span> Copy share link</button>
+                <button className="dropdown-item" role="menuitem" onClick={() => { copyCode(); setShareOpen(false); }}><span className="dropdown-ic">⧉</span> Copy code</button>
+                <button className="dropdown-item" role="menuitem" onClick={() => { saveCurrentProgram(); setShareOpen(false); }}><span className="dropdown-ic">+</span> Save current</button>
                 {savedPrograms.length > 0 && (
                   <>
                     <div className="dropdown-divider" />
                     {savedPrograms.map((s) => (
                       <div key={s.name} className="dropdown-item-row">
-                        <button
-                          className="dropdown-item"
-                          role="menuitem"
-                          onClick={() => openProgram(s)}
-                          title={s.code.slice(0, 60) || ''}
-                        >
-                          <span className="dropdown-ic">◀︎</span> {s.name}
-                        </button>
-                        <button
-                          className="dropdown-del"
-                          onClick={() => deleteProgram(s.name)}
-                          title="Delete"
-                        >
-                          ✕
-                        </button>
+                        <button className="dropdown-item" role="menuitem" onClick={() => { openProgram(s); setShareOpen(false); }}><span className="dropdown-ic">◀︎</span> {s.name}</button>
+                        <button className="dropdown-del" onClick={() => deleteProgram(s.name)} title="Delete">✕</button>
                       </div>
                     ))}
                   </>
@@ -770,225 +906,141 @@ export default function App() {
               </div>
             )}
           </div>
+
+          <div className="dropdown" onClick={(e) => e.stopPropagation()}>
+            <button className="btn btn-ghost dropdown-toggle" onClick={() => { setFileMenuOpen((o) => !o); setShareOpen(false); }}>⬇ Save ▾</button>
+            {fileMenuOpen && (
+              <div className="dropdown-menu" role="menu">
+                <button className="dropdown-item" role="menuitem" onClick={() => { downloadCode(); setFileMenuOpen(false); }}><span className="dropdown-ic">≡</span> Download .{ext}</button>
+                <button className="dropdown-item" role="menuitem" onClick={() => { downloadPicture(); setFileMenuOpen(false); }}><span className="dropdown-ic">◫</span> Picture (PNG)</button>
+                <button className="dropdown-item" role="menuitem" onClick={() => { copyCode(); setFileMenuOpen(false); }}><span className="dropdown-ic">⧉</span> Copy code</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <NetworkErrorBanner message={networkError} />
-      {status === 'running' && (
-        <div className="run-indicator">
-          <span className="spinner" /> Compiling &amp; running…
-        </div>
-      )}
-
+      {/* Workspace: explorer | editor | terminal */}
       <div className="workspace">
-        <div className="live-bar">
-          <span className="live-dot">
-            {status === 'running' ? 'Running…' : 'In-browser compiler · first run downloads ~90 MB'}
-          </span>
-          {cursor.line > 0 && (
-            <span className="cursor-pos">
-              Ln {cursor.line}, Col {cursor.col}
-            </span>
-          )}
-        </div>
+        {showExplorer && (
+          <aside className="sidebar" style={{ width: 240 }}>
+            <FileExplorer
+              files={project.files}
+              activeFile={project.active}
+              onSelect={selectFile}
+              onRename={renameFile}
+              onCreate={createFile}
+              onDelete={deleteFile}
+              onDownload={downloadFile}
+              onUpload={uploadFile}
+            />
+          </aside>
+        )}
 
         <main className="main">
           <section className="pane editor-pane" ref={editorRef}>
-            <div className="pane-header">
-              <span>{downloadName || 'program'}.{ext}</span>
-              <span className="cursor-info">{code.length} chars</span>
+            <div className="pane-tabs">
+              {project.files.map((f) => (
+                <button
+                  key={f.name}
+                  className={`file-tab ${f.name === project.active ? 'active' : ''} ${!f.saved ? 'unsaved' : ''}`}
+                  onClick={() => selectFile(f.name)}
+                >
+                  {f.name}
+                </button>
+              ))}
+              <span className="pane-tab-space" />
+              <button className="icon-btn" title="New file" onClick={() => createFile('untitled.cpp')}>＋</button>
             </div>
             <CodeMirror
               value={code}
               height="100%"
-              style={{ fontSize: `${fontSize}px` }}
-              onChange={(v) => setCode(v)}
+              style={{ fontSize: `${settings.fontSize}px` }}
+              onChange={(v) => setActiveFileCode(v)}
               onUpdate={(vu) => {
+                if (vu.view) editorViewRef.current = vu.view;
                 if (vu.selectionSet && vu.state.selection.main.head != null) {
                   const pos = vu.state.selection.main.head;
                   const line = vu.state.doc.lineAt(pos);
                   setCursor({ line: line.number, col: pos - line.from + 1 });
                 }
               }}
-              extensions={[cpp(), cppAutocomplete()]}
+              extensions={cmExtensions}
               theme={editorTheme}
               basicSetup={{
                 highlightActiveLine: true,
-                indentWithTab: true,
+                lineNumbers: false,
+                foldGutter: false,
+                autocompletion: false,
+                bracketMatching: false,
+                indentOnInput: true,
               }}
             />
+            <div className="live-bar">
+              <span className="live-dot">
+                {status === 'running' ? '🟡 Running…' : status === 'success' ? '✓ Finished' : status === 'failed' ? '✗ Error' : `In-browser compiler · ${interactiveOk ? 'live input' : 'batch input'}`}
+              </span>
+              <span className="cursor-pos">Ln {cursor.line}, Col {cursor.col}</span>
+              <span className="cursor-pos">{code.length} chars</span>
+            </div>
           </section>
         </main>
       </div>
 
-      {consoleOpen && (
-        <div className="console-overlay" onClick={() => setConsoleOpen(false)}>
-          <section
-            className="terminal"
-            style={{ height: consoleHeight }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="pane-header terminal-header">
-              <span className="terminal-title">
-                <span className="dot dot-red" />
-                <span className="dot dot-yellow" />
-                <span className="dot dot-green" />
-                {isProblem ? 'Check Result' : 'Console'}
-                {lastRunInfo && (
-                  <span className="run-time">
-                    last run {lastRunInfo.at.toLocaleTimeString()}
-                  </span>
-                )}
-              </span>
-              <button className="icon-btn" onClick={stopRun} title="Stop program (also kills infinite loops)" disabled={!isRunning}>
-                ■ Stop
-              </button>
-              <button className="icon-btn" onClick={() => setConsoleOpen(false)} title="Close console">
-                ✕
-              </button>
-            </div>
-            <CompileErrorBanner error={runError} sourceLines={code.split('\n')} />
-            <CheckResultBanner result={checkResult} />
-            {awaitingInput && (
-              <div className="input-await">
-                <span className="await-dot" />
-                Enter input…
-              </div>
-            )}
-            <OutputPanel
-              output={output}
-              status={status}
-              events={INTERACTIVE_OK ? consoleLog : undefined}
-              echo={awaitingInput && INTERACTIVE_OK ? liveInput : ''}
-            />
-            {INTERACTIVE_OK ? (
-              <div className="console-stdin console-live">
-                <div className="console-stdin-head">
-                  <span>Console input</span>
-                  <span className="input-hint">
-                    Type what {awaitingInput ? 'the program is asking for and' : 'your program will read with'} <code>cin</code> / <code>scanf</code>, then press Enter
-                  </span>
-                </div>
-                <form
-                  className="live-row"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    submitLiveInput();
-                  }}
-                >
-                  <input
-                    ref={liveInputRef}
-                    className="live-input"
-                    type="text"
-                    value={liveInput}
-                    onChange={(e) => setLiveInput(e.target.value)}
-                    disabled={!isRunning}
-                    placeholder={awaitingInput ? 'The program is waiting — type here' : 'Type input, press Enter'}
-                    autoComplete="off"
-                    autoCapitalize="off"
-                    autoCorrect="off"
-                    enterKeyHint="send"
-                    spellCheck={false}
-                  />
-                  <button
-                    type="submit"
-                    className="btn btn-run btn-live-send"
-                    disabled={!isRunning}
-                  >
-                    Enter ↵
-                  </button>
-                </form>
-              </div>
-            ) : (
-              <div className="console-stdin">
-                <div className="console-stdin-head">
-                  <span>Program input (stdin)</span>
-                  <span className="input-hint">
-                    Type what your program reads with <code>cin</code> / <code>scanf</code>, then press Run
-                  </span>
-                </div>
-                <form
-                  className="batch-stdin-form"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!isRunning) runCode();
-                  }}
-                >
-                  <textarea
-                    className="input-area terminal-input"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      // Enter runs on desktop (Shift+Enter = newline). On a
-                      // phone there is no Shift+Enter, so Enter inserts a
-                      // newline so multi-line input is actually possible; run
-                      // via the buttons below instead.
-                      if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
-                        e.preventDefault();
-                        if (!isRunning) runCode();
-                      }
-                    }}
-                    enterKeyHint={isMobile ? 'enter' : 'go'}
-                    placeholder={
-                      isProblem
-                        ? 'This problem provides input automatically. You can still edit it.'
-                        : 'Type input here, e.g.  25'
-                    }
-                    rows={2}
-                  />
-                  <div className="batch-send-row">
-                    <button
-                      type="submit"
-                      className="btn btn-run btn-live-send"
-                      disabled={isRunning}
-                    >
-                      Enter ↵
-                    </button>
-                  </div>
-                </form>
-              </div>
-            )}
-          </section>
-        </div>
+      {/* Docked terminal */}
+      {showConsole && (
+        <Terminal
+          mode={interactiveOk ? 'interactive' : 'batch'}
+          status={status}
+          consoleLog={consoleLog}
+          awaitingInput={awaitingInput}
+          liveInput={liveInput}
+          onLiveInputChange={setLiveInput}
+          onSubmitInput={submitLiveInput}
+          onStop={stopRun}
+          isRunning={isRunning}
+          batchInput={input}
+          onBatchInputChange={setInput}
+          onBatchRun={() => handleRun()}
+          output={output}
+          runError={runError}
+          sourceLines={code.split('\n')}
+          checkResult={checkResult}
+          onJumpToError={jumpToError}
+          terminalFontSize={settings.terminalFontSize}
+          terminalFontWeight={settings.terminalFontWeight}
+          interactiveOk={interactiveOk}
+          runInfo={runInfo}
+          showConsole={showConsole}
+          terminalTab={terminalTab}
+          setTerminalTab={setTerminalTab}
+          onOpen={openConsole}
+          onClose={() => setShowConsole(false)}
+          onClear={clearConsole}
+          isProblem={isProblem}
+          isMobile={isMobile}
+        />
+      )}
+
+      {clipNotice && <div className="toast">{clipNotice}</div>}
+      {settingsOpen && (
+        <SettingsPanel settings={settings} setSettings={setSettings} onClose={() => setSettingsOpen(false)} />
       )}
 
       {learnTab === 'lessons' && (
         <div className="learn-overlay" onClick={() => setLearnTab('none')}>
           <div onClick={(e) => e.stopPropagation()}>
-            <LessonsPanel
-              lessons={LESSONS.filter((l) => l.language === language)}
-              onLoadCode={(c) => {
-                setCode(c);
-                setRunError(null);
-                setCheckResult(null);
-                setOutput('');
-                setStatus('idle');
-                setLearnTab('none');
-              }}
-              onExit={() => setLearnTab('none')}
-            />
+            <LessonsPanel lessons={LESSONS.filter((l) => l.language === language)} onLoadCode={loadLesson} onExit={() => setLearnTab('none')} />
           </div>
         </div>
       )}
-
       {learnTab === 'problems' && (
         <div className="learn-overlay" onClick={() => setLearnTab('none')}>
           <div onClick={(e) => e.stopPropagation()}>
-            <ProblemsPanel
-              problems={PROBLEMS}
-              activeProblem={activeProblem}
-              onSelect={(p) => {
-                selectProblem(p);
-                if (!p) setLearnTab('none');
-              }}
-              onCheck={runCheck}
-              checking={checking}
-              onExit={() => setLearnTab('none')}
-            />
+            <ProblemsPanel problems={PROBLEMS} activeProblem={activeProblem} onSelect={selectProblem} onCheck={runCheck} checking={checking} onExit={() => setLearnTab('none')} />
           </div>
         </div>
       )}
-
       {learnTab === 'quizzes' && (
         <div className="learn-overlay" onClick={() => setLearnTab('none')}>
           <div onClick={(e) => e.stopPropagation()}>
