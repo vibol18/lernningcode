@@ -233,6 +233,7 @@ export function startInteractiveRun({ code, language, standard, extraFiles, onSt
   const worker = new Worker(new URL('./compilerWorker.js', import.meta.url), { type: 'module' });
   const pending = [];
   let finished = false;
+  let waitingForInput = false;
   let watchdog = null;
 
   function clearWatchdog() {
@@ -278,7 +279,12 @@ export function startInteractiveRun({ code, language, standard, extraFiles, onSt
     // Always keep every submitted line, including an empty string: a lone
     // newline is a valid keystroke for getchar()/scanf("%c")/"press Enter".
     if (typeof text === 'string') pending.push(text);
-    return flushOne();
+    const sent = flushOne();
+    if (sent) {
+      waitingForInput = false;
+      resetWatchdog();
+    }
+    return sent;
   }
 
   worker.addEventListener('message', (e) => {
@@ -286,7 +292,10 @@ export function startInteractiveRun({ code, language, standard, extraFiles, onSt
     clearWatchdog();
     switch (m.type) {
       case 'need-input':
-        if (!flushOne()) onNeedInput && onNeedInput();
+        if (!flushOne()) {
+          waitingForInput = true;
+          onNeedInput && onNeedInput();
+        }
         break;
       case 'stdout':
         onStdout && onStdout(m.data);
@@ -312,7 +321,7 @@ export function startInteractiveRun({ code, language, standard, extraFiles, onSt
       default:
         break;
     }
-    if (!finished) resetWatchdog();
+    if (!finished && !waitingForInput) resetWatchdog();
   });
 
   // If the worker goes completely silent while running, it is either a
