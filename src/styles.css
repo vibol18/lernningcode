@@ -2068,6 +2068,52 @@ body {
   color: var(--muted);
   opacity: 0.85;
 }
+
+/* Waiting-for-input marker with a blinking dot effect */
+.waiting-line { color: var(--muted); animation: waiting-blink 1.1s ease-in-out infinite; }
+@keyframes waiting-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* Phone editor toolbar — visible only on small screens */
+.mobile-toolbar { display: none; }
+@media (max-width: 800px) {
+  .mobile-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    overflow: hidden;
+  }
+  .mt-row {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .mt-row::-webkit-scrollbar { display: none; }
+  .mt-btn {
+    flex: 0 0 auto;
+    min-width: 44px;
+    min-height: 40px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--code-bg);
+    color: var(--text);
+    font-size: 16px;
+    line-height: 1;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .mt-btn:active { background: var(--hover, var(--border)); }
+  .mt-btn:disabled { opacity: 0.45; }
+  .mt-run { border-color: #22c55e; color: #22c55e; }
+  .mt-stop { border-color: #ef4444; color: #ef4444; }
+  .mt-symbol { font-family: 'Cascadia Code', Consolas, monospace; min-width: 40px; }
+}
 .term-stopbar {
   flex-shrink: 0;
   width: 100%;

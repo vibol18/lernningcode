@@ -184,7 +184,7 @@ export default function Terminal({
         // On touch devices, tapping anywhere in the console must open the
         // program's input line (real <input>) so the on-screen keyboard shows.
         onClick={() => {
-          const el = inputRef.current;
+          const el = inputRef.current || document.querySelector('.terminal-input');
           if (el && !el.disabled) {
             try { el.focus({ preventScroll: true }); } catch { /* ignore */ }
           }
@@ -204,6 +204,7 @@ export default function Terminal({
               {renderedLog}
               {awaitingInput && mode === 'interactive' && (
                 <span className="term-line term-echo">
+                  <span className="waiting-line">⏳ Waiting for input…&nbsp;</span>
                   {liveInput}
                   <span className="console-caret" />
                 </span>
