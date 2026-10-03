@@ -2054,6 +2054,12 @@ body {
 .live-row {
   min-width: 0;
 }
+.live-input-hint {
+  padding: 7px 14px 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
 .live-input {
   min-height: 44px;
   touch-action: manipulation;

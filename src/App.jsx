@@ -35,7 +35,8 @@ import {
   indentUnit,
   bracketMatching,
 } from '@codemirror/language';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment, undo, redo } from '@codemirror/commands';
+import MobileToolbar from './components/MobileToolbar.jsx';
 import { EditorView, keymap, lineNumbers as cmLineNumbers } from '@codemirror/view';
 
 const DRAFT_KEY = 'ccpp.project.v1';
@@ -983,6 +984,13 @@ export default function App() {
               <span className="cursor-pos">Ln {cursor.line}, Col {cursor.col}</span>
               <span className="cursor-pos">{code.length} chars</span>
             </div>
+            <MobileToolbar
+              editorViewRef={editorViewRef}
+              isRunning={isRunning}
+              onRun={() => handleRun()}
+              onStop={stopRun}
+              onClearConsole={clearConsole}
+            />
           </section>
         </main>
       </div>

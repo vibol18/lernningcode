@@ -1,13 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { CompileErrorBanner, CheckResultBanner } from './OutputPanel.jsx';
 
-/**
- * Docked IDE terminal showing Console / Output / Errors, plus the interactive
- * or batch stdin input. Console merges stdout/stderr/typed echo into one
- * stream like a real terminal; Output is the final captured program output;
- * Errors shows parsed compile diagnostics.
- */
-
 const TABS = ['console', 'output', 'errors'];
 
 const ANSI_COLORS = [
@@ -172,10 +165,31 @@ export default function Terminal({
           </span>
         )}
         <button className="icon-btn term-btn" title="Clear console" onClick={onClear}>⌫</button>
+        <button
+          className="icon-btn term-btn"
+          title="Copy console log"
+          onClick={() => {
+            const text = consoleLog.map((ev) => ev.text).join('');
+            try { navigator.clipboard && navigator.clipboard.writeText(text); } catch { /* ignore */ }
+          }}
+        >
+          📋
+        </button>
         <button className="icon-btn term-btn" title="Close terminal" onClick={onClose}>✕</button>
       </div>
 
-      <div className="terminal-body" style={{ fontSize: terminalFontSize, fontWeight: terminalFontWeight }}>
+      <div
+        className="terminal-body"
+        style={{ fontSize: terminalFontSize, fontWeight: terminalFontWeight }}
+        // On touch devices, tapping anywhere in the console must open the
+        // program's input line (real <input>) so the on-screen keyboard shows.
+        onClick={() => {
+          const el = inputRef.current;
+          if (el && !el.disabled) {
+            try { el.focus({ preventScroll: true }); } catch { /* ignore */ }
+          }
+        }}
+      >
         {terminalTab === 'console' && (
           <>
             <CheckResultBanner result={checkResult} />
@@ -216,42 +230,51 @@ export default function Terminal({
         {/* stdin row */}
         <div className="term-stdin">
           {mode === 'interactive' ? (
-            <form
-              className="live-row"
-              onSubmit={(e) => {
-                e.preventDefault();
-                onSubmitInput(liveInput);
-              }}
-            >
-              <input
-                ref={inputRef}
-                className="live-input"
-                type="text"
-                inputMode="text"
-                value={liveInput}
-                onChange={(e) => onLiveInputChange(e.target.value)}
-                disabled={!isRunning}
-                placeholder={awaitingInput ? '🟢 Program is waiting for input — type here' : 'Type program input, press Enter'}
-                autoComplete="off"
-                autoCapitalize="off"
-                autoCorrect="off"
-                enterKeyHint="send"
-                spellCheck={false}
-              />
-              <button
-                type="submit"
-                className="btn btn-run btn-live-send"
-                disabled={!isRunning}
+            <>
+              <div className="live-input-hint" role="status">
+                {awaitingInput
+                  ? 'Waiting for input. Enter a value and press Enter; repeat for each prompt.'
+                  : isRunning
+                    ? 'Program is running. You can send another line whenever it asks for input.'
+                    : 'Run your program to start entering input.'}
+              </div>
+              <form
+                className="live-row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  onSubmitInput(liveInput);
+                }}
               >
-                Enter ↵
-              </button>
-            </form>
+                <input
+                  ref={inputRef}
+                  className="live-input"
+                  type="text"
+                  inputMode="text"
+                  value={liveInput}
+                  onChange={(e) => onLiveInputChange(e.target.value)}
+                  disabled={!isRunning}
+                  placeholder={awaitingInput ? 'Program is waiting — enter a value' : 'Type a line of program input'}
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  enterKeyHint="send"
+                  spellCheck={false}
+                />
+                <button
+                  type="submit"
+                  className="btn btn-run btn-live-send"
+                  disabled={!isRunning}
+                >
+                  Send ↵
+                </button>
+              </form>
+            </>
           ) : (
             <div className="term-stdin">
               <div className="batch-note">
                 {interactiveOk
-                  ? 'Type everything then press Run.'
-                  : 'Interactive input unavailable — using batch input. Enter all input before running.'}
+                  ? 'Enter all input before running; use one line per value (for example, 1 then 2).'
+                  : 'Live input is unavailable in this browser. Enter every value on a separate line before running.'}
               </div>
               <form
                 className="batch-stdin-form"
